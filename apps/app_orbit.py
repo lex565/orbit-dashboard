@@ -27,6 +27,7 @@ LOGS_DIR.mkdir(exist_ok=True)
 LAST_VISIT_FILE  = LOGS_DIR / "last_visit.json"
 SAVINGS_FILE     = LOGS_DIR / "savings.json"
 EXPENSES_FILE    = LOGS_DIR / "expenses_log.csv"
+ATTENDANCE_FILE  = LOGS_DIR / "attendance_log.json"
 
 ATTEND_THRESHOLD = 0.80
 SEM_START  = date(2026, 3, 3)
@@ -613,6 +614,112 @@ def _delete_expense(idx: int):
     df = df.drop(index=idx).reset_index(drop=True)
     df.to_csv(EXPENSES_FILE, index=False, encoding="utf-8")
 
+# ── AUTO-ATTENDANCE SYSTEM ────────────────────────────────────────
+_WK1_MONDAY = SEM_START - timedelta(days=SEM_START.weekday())  # Mon of week containing SEM_START
+
+def _all_class_sessions() -> list[dict]:
+    """Return every individual class session instance across the semester."""
+    from datetime import time as _t
+    sessions = []
+    for wk_num in range(1, 17):
+        wk_monday = _WK1_MONDAY + timedelta(weeks=wk_num - 1)
+        for cls in CLASS_SCHEDULE:
+            if not (cls["weeks"][0] <= wk_num <= cls["weeks"][1]):
+                continue
+            for day in cls["days"]:
+                sess_date = wk_monday + timedelta(days=day)
+                if sess_date < SEM_START or sess_date > SEM_END:
+                    continue
+                end_slot = cls["slots"][-1]
+                eh, em = _SLOT_START[end_slot]
+                end_h, end_m = eh + (em + 50) // 60, (em + 50) % 60
+                sessions.append({
+                    "sid":      f"{cls['code']}_{sess_date.isoformat()}_{cls['slots'][0]}",
+                    "code":     cls["code"],
+                    "name":     cls["name"],
+                    "color":    cls["color"],
+                    "week":     wk_num,
+                    "date":     sess_date.isoformat(),
+                    "weekday":  day,
+                    "end_time": _t(end_h, end_m),
+                })
+    return sorted(sessions, key=lambda x: (x["date"], x["sid"]))
+
+def _load_attendance() -> dict:
+    try:
+        if ATTENDANCE_FILE.exists():
+            return json.loads(ATTENDANCE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+def _save_attendance(log: dict):
+    ATTENDANCE_FILE.write_text(json.dumps(log, indent=2), encoding="utf-8")
+
+def _auto_log_past_classes():
+    """Mark every completed class session as attended=True if not already logged."""
+    from datetime import time as _t
+    log = _load_attendance()
+    changed = False
+    for sess in _all_class_sessions():
+        if sess["sid"] in log:
+            continue
+        sess_date = date.fromisoformat(sess["date"])
+        ended = (sess_date < TODAY) or (sess_date == TODAY and NOW.time() > sess["end_time"])
+        if ended:
+            log[sess["sid"]] = {
+                "attended": True, "auto": True,
+                "date": sess["date"], "code": sess["code"],
+                "name": sess["name"], "week": sess["week"],
+            }
+            changed = True
+    if changed:
+        _save_attendance(log)
+
+def _toggle_attendance(sid: str, attended: bool):
+    log = _load_attendance()
+    if sid in log:
+        log[sid]["attended"] = attended
+        log[sid]["auto"] = False
+        _save_attendance(log)
+
+_auto_log_past_classes()   # run every page load
+_ATT_LOG = _load_attendance()
+_ALL_SESSIONS = _all_class_sessions()
+
+# Pre-compute heatmap matrix: course × week
+_HM_COURSES = [
+    ("D253026002", "Chinese"),
+    ("D253026011", "Sci Writing"),
+    ("D253051004", "RS Image"),
+    ("D253052002", "UAV RS"),
+    ("D253051005", "RS Disasters"),
+    ("D253041002", "AI Models"),
+]
+_HM_WEEKS = list(range(1, 17))
+_hm_z, _hm_text, _hm_hover = [], [], []
+for _code, _short in _HM_COURSES:
+    _rz, _rt, _rh = [], [], []
+    for _wk in _HM_WEEKS:
+        _wsess = [s for s in _ALL_SESSIONS if s["code"] == _code and s["week"] == _wk]
+        if not _wsess:
+            _rz.append(None); _rt.append(""); _rh.append(f"Wk {_wk}: No class")
+            continue
+        _all_past = all(date.fromisoformat(s["date"]) < TODAY or
+                        (date.fromisoformat(s["date"]) == TODAY and NOW.time() > s["end_time"])
+                        for s in _wsess)
+        _att = sum(1 for s in _wsess if _ATT_LOG.get(s["sid"], {}).get("attended", False))
+        _tot = len(_wsess)
+        if not _all_past:
+            _rz.append(0.5); _rt.append("·"); _rh.append(f"Wk {_wk}: {_tot} session(s) upcoming")
+        elif _att == _tot:
+            _rz.append(1.0); _rt.append("✓"); _rh.append(f"Wk {_wk}: ✓ {_att}/{_tot} attended")
+        elif _att > 0:
+            _rz.append(0.6); _rt.append("~"); _rh.append(f"Wk {_wk}: ⚠ {_att}/{_tot} attended")
+        else:
+            _rz.append(0.0); _rt.append("✗"); _rh.append(f"Wk {_wk}: ✗ Absent ({_tot} sessions)")
+    _hm_z.append(_rz); _hm_text.append(_rt); _hm_hover.append(_rh)
+
 current_savings = _load_savings()
 
 # ── AUTO-CALCULATED INCOME & KPIs ────────────────────────────────
@@ -1145,47 +1252,130 @@ with t1:
             rh += '</div>'
             st.markdown(rh, unsafe_allow_html=True)
 
-    # ─ Weekly attendance log ─────────────────────────────────────
+    # ─ Attendance Heatmap + Timeline ─────────────────────────────
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        '<div style="font-size:.65rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-        'text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">'
-        '📆 Week-by-Week Attendance Log</div>',
-        unsafe_allow_html=True
+    st.html('<div style="font-size:.65rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
+            'text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">'
+            '🗓️ Semester Attendance Heatmap — Auto-Logged · Green=Attended · Red=Absent · Blue=Upcoming</div>')
+
+    # ── Heatmap (course × week) ──
+    _week_labels = [f"Wk {w}" for w in _HM_WEEKS]
+    _course_labels = [c[1] for c in _HM_COURSES]
+    _hm_colorscale = [
+        [0.0,  "#7f1d1d"],   # absent
+        [0.3,  "#ef4444"],
+        [0.5,  "#1e3a5f"],   # upcoming
+        [0.55, "#2563eb"],
+        [0.65, "#34d399"],   # partial
+        [1.0,  "#064e3b"],   # fully attended
+    ]
+    fig_hm = go.Figure(go.Heatmap(
+        z=_hm_z,
+        x=_week_labels,
+        y=_course_labels,
+        text=_hm_text,
+        customdata=_hm_hover,
+        texttemplate="%{text}",
+        textfont=dict(size=11, color="rgba(255,255,255,0.85)"),
+        hovertemplate="%{customdata}<extra></extra>",
+        colorscale=_hm_colorscale,
+        zmin=0, zmax=1,
+        showscale=False,
+        xgap=3, ygap=3,
+    ))
+    # Mark current week
+    _cur_wk = max(1, (TODAY - SEM_START).days // 7 + 1)
+    if 1 <= _cur_wk <= 16:
+        fig_hm.add_vline(x=f"Wk {_cur_wk}", line_color="#f59e0b",
+                         line_width=2, line_dash="dot",
+                         annotation_text="NOW", annotation_font_color="#f59e0b",
+                         annotation_position="top")
+    fig_hm.update_layout(
+        **PD, height=240,
+        margin=dict(l=10, r=10, t=28, b=10),
+        xaxis=dict(side="top", tickfont=dict(size=9, color="#4a5568"),
+                   gridcolor="rgba(0,0,0,0)", zeroline=False),
+        yaxis=dict(tickfont=dict(size=9, color="#94b4d4"),
+                   gridcolor="rgba(0,0,0,0)", zeroline=False),
     )
-    if not watt_df.empty and sem_started:
-        # render as styled HTML table, not st.dataframe
-        rows_html = ('<div style="background:#0c1020;border:1px solid #12192b;'
-                     'border-radius:12px;overflow:hidden">'
-                     '<div style="display:grid;grid-template-columns:130px repeat(7,1fr);'
-                     'border-bottom:1px solid #12192b">')
-        for h in ["Week"] + COURSE_SHORT + ["Σ"]:
-            rows_html += (f'<div style="padding:8px 10px;font-size:.58rem;color:#4a5568;'
-                          f'font-family:\'Space Mono\',monospace;text-transform:uppercase;'
-                          f'letter-spacing:.07em">{h}</div>')
-        rows_html += '</div>'
-        for _, row in watt_df.iterrows():
-            rows_html += '<div style="display:grid;grid-template-columns:130px repeat(7,1fr);border-bottom:1px solid #0d1117">'
-            rows_html += (f'<div style="padding:7px 10px;font-size:.65rem;color:#94b4d4;'
-                          f'font-family:\'Space Mono\',monospace">{row["Week"]}</div>')
-            for c in COURSE_SHORT:
-                v = row.get(c, 0)
-                col_c = "#10b981" if v == 1 else "#4a5568"
-                rows_html += (f'<div style="padding:7px 10px;font-size:.65rem;color:{col_c};'
-                               f'font-family:\'Space Mono\',monospace;text-align:center">{v}</div>')
-            tot = row.get("Σ", 0)
-            rows_html += (f'<div style="padding:7px 10px;font-size:.65rem;color:#60a5fa;'
-                          f'font-family:\'Space Mono\',monospace;text-align:center;font-weight:700">{tot}</div>')
-            rows_html += '</div>'
-        rows_html += '</div>'
-        st.markdown(rows_html, unsafe_allow_html=True)
-    else:
-        st.markdown(
-            '<div style="background:#0c1020;border:1px solid #12192b;border-radius:12px;'
-            'padding:20px;text-align:center;font-size:.7rem;color:#4a5568;'
-            'font-family:\'Space Mono\',monospace">No attendance data yet · Update Excel to populate</div>',
-            unsafe_allow_html=True
-        )
+    st.plotly_chart(fig_hm, use_container_width=True, config={"displayModeBar": False})
+
+    # ── Per-course dot timeline ──
+    st.html('<div style="font-size:.6rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
+            'text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;margin-top:4px">'
+            '● Session-level log — hover for details · click a dot below to mark absent/present</div>')
+
+    _dot_x, _dot_y, _dot_color, _dot_sym, _dot_hover, _dot_size = [], [], [], [], [], []
+    for _code, _short in _HM_COURSES:
+        for _s in _ALL_SESSIONS:
+            if _s["code"] != _code:
+                continue
+            _sdate = date.fromisoformat(_s["date"])
+            _ended = (_sdate < TODAY) or (_sdate == TODAY and NOW.time() > _s["end_time"])
+            _att_entry = _ATT_LOG.get(_s["sid"], {})
+            _att = _att_entry.get("attended", False)
+            _auto = _att_entry.get("auto", True)
+            if not _ended:
+                _clr, _sym = "#1e3a5f", "circle"
+            elif _att:
+                _clr, _sym = "#10b981", "circle"
+            else:
+                _clr, _sym = "#ef4444", "x"
+            _dot_x.append(_sdate.strftime("%d %b"))
+            _dot_y.append(_short)
+            _dot_color.append(_clr)
+            _dot_sym.append(_sym)
+            _dot_size.append(9)
+            _status = "✓ Attended" if _att else ("Upcoming" if not _ended else "✗ Absent")
+            _auto_lbl = " (auto)" if _auto else " (manual)"
+            _dot_hover.append(f"{_short}<br>{_sdate.strftime('%a %d %b')}<br>{_status}{_auto_lbl}<br>Wk {_s['week']}")
+
+    fig_dots = go.Figure(go.Scatter(
+        x=_dot_x, y=_dot_y,
+        mode="markers",
+        marker=dict(color=_dot_color, symbol=_dot_sym, size=_dot_size,
+                    line=dict(width=1.5, color="rgba(255,255,255,.2)")),
+        hovertemplate="%{customdata}<extra></extra>",
+        customdata=_dot_hover,
+    ))
+    fig_dots.update_layout(
+        **PD, height=200,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(tickangle=-45, tickfont=dict(size=8, color="#4a5568"),
+                   gridcolor="rgba(255,255,255,.03)", zeroline=False),
+        yaxis=dict(tickfont=dict(size=9, color="#94b4d4"),
+                   gridcolor="rgba(255,255,255,.03)", zeroline=False),
+        showlegend=False,
+    )
+    st.plotly_chart(fig_dots, use_container_width=True, config={"displayModeBar": False})
+
+    # ── Manual override: mark a session absent/present ──
+    with st.expander("✏️ Correct Attendance (mark a session absent or present)", expanded=False):
+        st.caption("All past sessions are auto-logged as attended. Use this to correct mistakes.")
+        _past_sessions = [s for s in _ALL_SESSIONS
+                          if date.fromisoformat(s["date"]) < TODAY or
+                          (date.fromisoformat(s["date"]) == TODAY and NOW.time() > s["end_time"])]
+        if _past_sessions:
+            _ov_courses = sorted(set(s["name"] for s in _past_sessions))
+            _sel_course = st.selectbox("Course", _ov_courses, key="ov_course")
+            _course_sess = [s for s in _past_sessions if s["name"] == _sel_course]
+            _course_sess_sorted = sorted(_course_sess, key=lambda x: x["date"], reverse=True)
+            for _s in _course_sess_sorted[:10]:   # show last 10 sessions
+                _att_now = _ATT_LOG.get(_s["sid"], {}).get("attended", True)
+                _sc1, _sc2, _sc3 = st.columns([3, 1, 1], gap="small")
+                _sdate_label = date.fromisoformat(_s["date"]).strftime("%a %d %b  (Wk %W)")
+                with _sc1:
+                    st.html(f'<div style="font-size:.65rem;color:#94b4d4;padding:6px 0">{_sdate_label}</div>')
+                with _sc2:
+                    if st.button("✓ Present", key=f"att_p_{_s['sid']}", use_container_width=True):
+                        _toggle_attendance(_s["sid"], True)
+                        st.rerun()
+                with _sc3:
+                    if st.button("✗ Absent", key=f"att_a_{_s['sid']}", use_container_width=True):
+                        _toggle_attendance(_s["sid"], False)
+                        st.rerun()
+        else:
+            st.info("No completed sessions yet.")
 
 
 # ╔══════════════════════════════════════════════════════════════╗
