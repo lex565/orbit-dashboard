@@ -121,6 +121,31 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ── PWA MANIFEST + INSTALL META TAGS ─────────────────────────────
+import json as _json, base64 as _b64
+_manifest = _json.dumps({
+    "name": "O.R.B.I.T — Tanaka Alex Mbendana",
+    "short_name": "O.R.B.I.T",
+    "description": "Academic command centre — research, budget, trajectory",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#030408",
+    "theme_color": "#2563eb",
+    "orientation": "any",
+    "icons": [{"src": "https://raw.githubusercontent.com/lex565/orbit-dashboard/master/Tanaka.jpg",
+               "sizes": "512x512", "type": "image/jpeg", "purpose": "any maskable"}]
+})
+_manifest_b64 = _b64.b64encode(_manifest.encode()).decode()
+st.html(f"""
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="O.R.B.I.T">
+<link rel="apple-touch-icon" href="https://raw.githubusercontent.com/lex565/orbit-dashboard/master/Tanaka.jpg">
+<link rel="manifest" href="data:application/manifest+json;base64,{_manifest_b64}">
+""")
+
 # Auto-refresh every 5 minutes (300,000 ms) — picks up Excel changes & date rollovers
 _refresh_count = st_autorefresh(interval=300_000, key="orbit_autorefresh")
 
@@ -143,31 +168,27 @@ st.html("""
 <style>
 /* ── BASE ── */
 *,*::before,*::after{box-sizing:border-box}
-body{font-family:'Inter',sans-serif;color:#b8c4d0}
+body{font-family:'Inter',sans-serif}
 #MainMenu,footer,header{visibility:hidden}
-.block-container{padding-top:1.2rem!important;padding-bottom:2rem!important;max-width:100%!important}
 section[data-testid="stSidebar"]{background:#030408!important;border-right:1px solid #0e1628}
 
-/* ── ROOM BACKGROUND ── late-night study room: dark walls, floor, ambient desk glow */
-html,body,.stApp{background-color:#030408!important;color:#b8c4d0}
-.stApp{position:relative}
-.stApp::before{
-  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
-  background:
-    linear-gradient(to right,rgba(0,0,0,.45) 0%,transparent 18%),
-    linear-gradient(to left,rgba(0,0,0,.45) 0%,transparent 18%),
-    linear-gradient(to bottom,rgba(0,0,0,.5) 0%,transparent 22%),
-    linear-gradient(to top,rgba(0,0,0,.6) 0%,transparent 28%),
-    radial-gradient(ellipse 65% 30% at 50% 108%,rgba(37,99,235,.16),transparent),
-    radial-gradient(ellipse 38% 28% at 88% 4%,rgba(124,58,237,.09),transparent),
-    radial-gradient(ellipse 30% 22% at 6% 92%,rgba(16,185,129,.06),transparent),
-    linear-gradient(180deg,#020306 0%,#040a16 30%,#050c1a 50%,#040a16 70%,#020306 100%)}
-.stApp::after{
-  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+/* ── ROOM BACKGROUND — applied directly to body/stApp, no pseudo-elements (avoids z-index clash with Streamlit loader) ── */
+html,body,.stApp{
+  background-color:#030408!important;
   background-image:
-    repeating-linear-gradient(transparent,transparent 39px,rgba(37,99,235,.028) 39px,rgba(37,99,235,.028) 40px),
-    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(37,99,235,.028) 39px,rgba(37,99,235,.028) 40px)}
-.block-container{position:relative;z-index:1}
+    repeating-linear-gradient(transparent,transparent 39px,rgba(37,99,235,.022) 39px,rgba(37,99,235,.022) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(37,99,235,.022) 39px,rgba(37,99,235,.022) 40px),
+    linear-gradient(to right,rgba(0,0,0,.38) 0%,transparent 16%),
+    linear-gradient(to left,rgba(0,0,0,.38) 0%,transparent 16%),
+    linear-gradient(to bottom,rgba(0,0,0,.48) 0%,transparent 20%),
+    linear-gradient(to top,rgba(0,0,0,.52) 0%,transparent 24%),
+    radial-gradient(ellipse 65% 30% at 50% 108%,rgba(37,99,235,.14),transparent),
+    radial-gradient(ellipse 36% 26% at 90% 3%,rgba(124,58,237,.08),transparent),
+    linear-gradient(180deg,#020306 0%,#040a16 30%,#050c1a 50%,#040a16 70%,#020306 100%)!important;
+  background-size:40px 40px,40px 40px,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%!important;
+  background-attachment:fixed!important;
+  color:#b8c4d0}
+.block-container{padding-top:1.2rem!important;padding-bottom:2rem!important;max-width:100%!important}
 
 /* ── GLASSMORPHISM METRIC CARDS ── */
 [data-testid="stMetric"]{
@@ -628,12 +649,51 @@ else:
     sys_color = "#10b981"
 
 # ── MODE TOGGLE ──────────────────────────────────────────────────
-_tc1, _tc2 = st.columns([9, 1])
+_tc1, _tc2, _tc3 = st.columns([7, 1, 1])
 with _tc2:
     _btn_lbl = "☀️ Light" if not st.session_state.light_mode else "🌑 Dark"
     if st.button(_btn_lbl, use_container_width=True, key="mode_toggle"):
         st.session_state.light_mode = not st.session_state.light_mode
         st.rerun()
+with _tc3:
+    if st.button("📲 Install", use_container_width=True, key="install_btn"):
+        st.session_state["show_install"] = not st.session_state.get("show_install", False)
+
+if st.session_state.get("show_install", False):
+    st.html("""
+    <div style="background:linear-gradient(135deg,#07091a,#0a0f24);border:1px solid #1d4ed8;
+      border-radius:14px;padding:18px 22px;margin-bottom:14px">
+      <div style="font-size:.6rem;color:#2563eb;font-weight:700;font-family:'Space Mono',monospace;
+        text-transform:uppercase;letter-spacing:.12em;margin-bottom:12px">📲 Install O.R.B.I.T as an App</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div style="background:rgba(0,0,0,.3);border-radius:10px;padding:14px">
+          <div style="font-size:.75rem;font-weight:700;color:#e2e8f0;margin-bottom:8px">🤖 Android (Chrome)</div>
+          <div style="font-size:.65rem;color:#94b4d4;line-height:1.8">
+            1. Open the app URL in Chrome<br>
+            2. Tap the <b style="color:#60a5fa">⋮ menu</b> (top-right)<br>
+            3. Tap <b style="color:#60a5fa">"Add to Home screen"</b><br>
+            4. Tap <b style="color:#60a5fa">Add</b> — done ✓<br>
+            <span style="color:#4a5568;font-size:.58rem">Opens full-screen like a native app</span>
+          </div>
+        </div>
+        <div style="background:rgba(0,0,0,.3);border-radius:10px;padding:14px">
+          <div style="font-size:.75rem;font-weight:700;color:#e2e8f0;margin-bottom:8px">🍎 iPhone (Safari)</div>
+          <div style="font-size:.65rem;color:#94b4d4;line-height:1.8">
+            1. Open the app URL in <b style="color:#60a5fa">Safari</b><br>
+            2. Tap the <b style="color:#60a5fa">Share button</b> (□↑)<br>
+            3. Scroll down → <b style="color:#60a5fa">"Add to Home Screen"</b><br>
+            4. Tap <b style="color:#60a5fa">Add</b> — done ✓<br>
+            <span style="color:#4a5568;font-size:.58rem">Must use Safari, not Chrome on iOS</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #1e3a5f;
+        font-size:.6rem;color:#4a5568;line-height:1.7">
+        💡 Once installed: opens full-screen, no browser bar, looks exactly like a native app.
+        The app icon will be your profile photo. Works on both portrait and landscape.
+      </div>
+    </div>
+    """)
 
 # ── CLASS ALERT BANNER ───────────────────────────────────────────
 _active_class = _current_class()
