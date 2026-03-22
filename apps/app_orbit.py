@@ -137,41 +137,52 @@ _TXT2= "#374151" if _lm else "#e2e8f0"
 _TXT3= "#6b7280" if _lm else "#4a5568"
 _TXT4= "#1f2937" if _lm else "#94b4d4"
 
-# ── ALL CSS IN ONE BLOCK ─────────────────────────────────────────
-st.markdown(
-    """<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">"""
-    """<style>
-/* ── AMBIENT ROOM BACKGROUND ── deep midnight grid, like a focused study room at night */
-html,body,.stApp{
-  background:#040508!important;color:#b8c4d0;
-  background-image:
-    linear-gradient(rgba(37,99,235,.04) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(37,99,235,.04) 1px,transparent 1px),
-    radial-gradient(ellipse 80% 60% at 50% -10%,rgba(37,99,235,.07),transparent),
-    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(124,58,237,.05),transparent),
-    radial-gradient(ellipse 40% 30% at 0% 80%,rgba(16,185,129,.04),transparent)!important;
-  background-size:40px 40px,40px 40px,100% 100%,100% 100%,100% 100%!important;
-}
+# ── ALL CSS — use st.html() to prevent CSS leaking as visible text ─
+st.html("""
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── BASE ── */
 *,*::before,*::after{box-sizing:border-box}
-body{font-family:'Inter',sans-serif}
-section[data-testid="stSidebar"]{background:#040508!important;border-right:1px solid #0e1628}
+body{font-family:'Inter',sans-serif;color:#b8c4d0}
 #MainMenu,footer,header{visibility:hidden}
 .block-container{padding-top:1.2rem!important;padding-bottom:2rem!important;max-width:100%!important}
+section[data-testid="stSidebar"]{background:#030408!important;border-right:1px solid #0e1628}
+
+/* ── ROOM BACKGROUND ── late-night study room: dark walls, floor, ambient desk glow */
+html,body,.stApp{background-color:#030408!important;color:#b8c4d0}
+.stApp{position:relative}
+.stApp::before{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    linear-gradient(to right,rgba(0,0,0,.45) 0%,transparent 18%),
+    linear-gradient(to left,rgba(0,0,0,.45) 0%,transparent 18%),
+    linear-gradient(to bottom,rgba(0,0,0,.5) 0%,transparent 22%),
+    linear-gradient(to top,rgba(0,0,0,.6) 0%,transparent 28%),
+    radial-gradient(ellipse 65% 30% at 50% 108%,rgba(37,99,235,.16),transparent),
+    radial-gradient(ellipse 38% 28% at 88% 4%,rgba(124,58,237,.09),transparent),
+    radial-gradient(ellipse 30% 22% at 6% 92%,rgba(16,185,129,.06),transparent),
+    linear-gradient(180deg,#020306 0%,#040a16 30%,#050c1a 50%,#040a16 70%,#020306 100%)}
+.stApp::after{
+  content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    repeating-linear-gradient(transparent,transparent 39px,rgba(37,99,235,.028) 39px,rgba(37,99,235,.028) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(37,99,235,.028) 39px,rgba(37,99,235,.028) 40px)}
+.block-container{position:relative;z-index:1}
 
 /* ── GLASSMORPHISM METRIC CARDS ── */
 [data-testid="stMetric"]{
-  background:rgba(12,16,32,0.7)!important;
-  backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;
-  border:1px solid rgba(37,99,235,.2)!important;
+  background:rgba(8,12,28,0.75)!important;
+  backdrop-filter:blur(14px)!important;-webkit-backdrop-filter:blur(14px)!important;
+  border:1px solid rgba(37,99,235,.22)!important;
   border-radius:14px!important;padding:16px 14px 12px!important;
   position:relative;overflow:hidden;
-  box-shadow:0 4px 24px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)!important;
+  box-shadow:0 4px 28px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04)!important;
   transition:transform .25s,border-color .25s,box-shadow .25s!important}
 [data-testid="stMetric"]::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
   background:linear-gradient(90deg,#1d4ed8,#7c3aed,#3b82f6)}
 [data-testid="stMetric"]:hover{transform:translateY(-3px)!important;
-  border-color:rgba(37,99,235,.5)!important;
-  box-shadow:0 8px 32px rgba(37,99,235,.2),inset 0 1px 0 rgba(255,255,255,.06)!important}
+  border-color:rgba(37,99,235,.55)!important;
+  box-shadow:0 10px 36px rgba(37,99,235,.25),inset 0 1px 0 rgba(255,255,255,.07)!important}
 [data-testid="stMetricLabel"] p{color:#4a5568!important;font-size:.65rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase;font-family:'Space Mono',monospace!important}
 [data-testid="stMetricValue"] div{color:#e2e8f0!important;font-family:'Space Mono',monospace!important;font-size:1.4rem!important;font-weight:700!important}
 [data-testid="stMetricDelta"]{display:none}
@@ -179,40 +190,48 @@ section[data-testid="stSidebar"]{background:#040508!important;border-right:1px s
 /* ── TABS ── */
 [data-testid="stTabs"] [role="tablist"]{border-bottom:1px solid #0e1628;gap:2px;background:transparent}
 button[role="tab"]{color:#4a5568!important;font-size:.68rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase;padding:9px 18px!important;border-radius:6px 6px 0 0!important;border:1px solid transparent!important;border-bottom:none!important;font-family:'Space Mono',monospace!important;background:transparent!important;transition:all .25s}
-button[role="tab"][aria-selected="true"]{color:#60a5fa!important;background:rgba(12,16,32,.8)!important;border-color:#0e1628!important}
+button[role="tab"][aria-selected="true"]{color:#60a5fa!important;background:rgba(8,12,28,.85)!important;border-color:#0e1628!important}
 button[role="tab"]:hover:not([aria-selected="true"]){color:#94b4d4!important;background:rgba(29,78,216,.08)!important}
-[data-testid="stTabContent"]{animation:tab-fade-in .3s ease forwards}
+[data-testid="stTabContent"]{animation:tab-fade-in .35s ease forwards}
 
 /* ── INPUTS & BUTTONS ── */
 [data-testid="stDataFrame"]{display:none!important}
 .stAlert{border-radius:10px!important}
 .stSelectbox [data-baseweb="select"]>div{background:#0c1020!important;border:1px solid #12192b!important;color:#e2e8f0!important}
-.stNumberInput input,.stTextArea textarea,.stDateInput input,.stTextInput input{background:#0c1020!important;border:1px solid #12192b!important;color:#e2e8f0!important;border-radius:8px!important}
+.stNumberInput input,.stTextArea textarea,.stDateInput input,.stTextInput input{background:#08101e!important;border:1px solid #1a2540!important;color:#e2e8f0!important;border-radius:8px!important}
 .stFormSubmitButton button,.stButton button{
   background:linear-gradient(135deg,#1d4ed8,#2563eb)!important;
   color:#fff!important;border:none!important;border-radius:8px!important;
   font-weight:700!important;font-family:'Space Mono',monospace!important;
   font-size:.75rem!important;letter-spacing:.06em!important;
-  box-shadow:0 4px 15px rgba(37,99,235,.35)!important;
+  box-shadow:0 4px 18px rgba(37,99,235,.4)!important;
   transition:transform .2s,box-shadow .2s!important}
-.stFormSubmitButton button:hover,.stButton button:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(37,99,235,.5)!important}
+.stFormSubmitButton button:hover,.stButton button:hover{transform:translateY(-2px)!important;box-shadow:0 8px 24px rgba(37,99,235,.55)!important}
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-track{background:#040508}
+::-webkit-scrollbar-track{background:#030408}
 ::-webkit-scrollbar-thumb{background:rgba(37,99,235,.4);border-radius:2px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(37,99,235,.7)}
 .stCaption{color:#4a5568!important;font-size:.7rem!important}
 div[data-testid="stVerticalBlock"] div[style*="overflow: hidden"]{overflow:visible!important}
 
-/* ── GLASSMORPHISM HELPER CLASS ── */
-.glass-card{
-  background:rgba(12,16,32,0.65)!important;
-  backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;
-  border:1px solid rgba(37,99,235,.18)!important;
-  box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05)!important}
+/* ── GLASSMORPHISM HELPER ── */
+.glass-card{background:rgba(8,12,28,0.7)!important;backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;border:1px solid rgba(37,99,235,.2)!important;box-shadow:0 8px 32px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.05)!important}
 
-/* ── ANIMATIONS ─────────────────────────────────────── */
+/* ── ANIMATION CLASSES ── */
+.orbit-ring-1{animation:orbit-spin 8s linear infinite}
+.orbit-ring-2{animation:orbit-spin-rev 14s linear infinite}
+.orbit-ring-3{animation:orbit-spin 22s linear infinite}
+.orbit-ring-4{animation:orbit-spin-rev 30s linear infinite}
+.profile-avatar{animation:avatar-pulse 3s ease-in-out infinite}
+.status-dot{animation:status-blink 2s ease-in-out infinite;border-radius:50%}
+.orbit-title{animation:title-glow 4s ease-in-out infinite}
+.float-satellite{animation:float-icon 3s ease-in-out infinite}
+.fade-card{animation:card-in .5s ease forwards}
+.shimmer-line{background:linear-gradient(90deg,#1d4ed8 0%,#7c3aed 25%,#d97706 50%,#2563eb 75%,#1d4ed8 100%);background-size:400px 100%;animation:shimmer-bar 3s linear infinite}
+
+/* ── KEYFRAMES ── */
 @keyframes orbit-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 @keyframes orbit-spin-rev{from{transform:rotate(0deg)}to{transform:rotate(-360deg)}}
 @keyframes pulse-glow{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0)}50%{opacity:.7;box-shadow:0 0 12px 4px rgba(16,185,129,.18)}}
@@ -228,67 +247,42 @@ div[data-testid="stVerticalBlock"] div[style*="overflow: hidden"]{overflow:visib
 @keyframes orbit-dot{0%{transform:rotate(0deg) translateX(70px) rotate(0deg)}100%{transform:rotate(360deg) translateX(70px) rotate(-360deg)}}
 @keyframes star-twinkle{0%,100%{opacity:.15}50%{opacity:.7}}
 @keyframes tab-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 0 0 4px rgba(37,99,235,.15)}}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 0 0 5px rgba(37,99,235,.2)}}
 @keyframes count-up{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
 @keyframes ambient-glow{0%,100%{opacity:.4}50%{opacity:.7}}
+</style>
+""")
 
-</style>""",
-    unsafe_allow_html=True,
-)
-
-st.markdown("""<style>
-.orbit-ring-1{animation:orbit-spin 8s linear infinite}
-.orbit-ring-2{animation:orbit-spin-rev 14s linear infinite}
-.orbit-ring-3{animation:orbit-spin 22s linear infinite}
-.orbit-ring-4{animation:orbit-spin-rev 30s linear infinite}
-.profile-avatar{animation:avatar-pulse 3s ease-in-out infinite}
-.status-dot{animation:status-blink 2s ease-in-out infinite;border-radius:50%}
-.orbit-title{animation:title-glow 4s ease-in-out infinite}
-.float-satellite{animation:float-icon 3s ease-in-out infinite}
-.fade-card{animation:card-in .5s ease forwards}
-.shimmer-line{background:linear-gradient(90deg,#1d4ed8 0%,#7c3aed 25%,#d97706 50%,#2563eb 75%,#1d4ed8 100%);background-size:400px 100%;animation:shimmer-bar 3s linear infinite}
-</style>""", unsafe_allow_html=True)
-
-# ── DYNAMIC THEME + MOBILE RESPONSIVE CSS ────────────────────────
-_BG_GRID = "rgba(37,99,235,.03)" if not _lm else "rgba(0,0,0,.04)"
-st.markdown(f"""<style>
-html,body,.stApp{{
-  background:{_BG}!important;color:{_TXT}!important;
-  background-image:
-    linear-gradient({_BG_GRID} 1px,transparent 1px),
-    linear-gradient(90deg,{_BG_GRID} 1px,transparent 1px),
-    radial-gradient(ellipse 80% 50% at 50% -5%,rgba(37,99,235,.06),transparent),
-    radial-gradient(ellipse 50% 40% at 95% 100%,rgba(124,58,237,.04),transparent)!important;
-  background-size:40px 40px,40px 40px,100% 100%,100% 100%!important;
-}}
+# ── DYNAMIC THEME + MOBILE CSS (st.html prevents CSS leak) ───────
+st.html(f"""<style>
+html,body,.stApp{{background-color:{_BG}!important;color:{_TXT}!important}}
 section[data-testid="stSidebar"]{{background:{_BG}!important}}
-[data-testid="stMetric"]{{background:rgba(12,16,32,0.72)!important;border-color:rgba(37,99,235,.22)!important}}
-[data-testid="stTabs"] [role="tablist"]{{border-color:{_BRD};flex-wrap:wrap}}
-button[role="tab"]{{color:{_TXT3}!important;font-size:.6rem!important;padding:7px 12px!important}}
-button[role="tab"][aria-selected="true"]{{color:#60a5fa!important;background:rgba(12,16,32,.8)!important;border-color:{_BRD}!important}}
+[data-testid="stTabs"] [role="tablist"]{{border-color:{_BRD}}}
+button[role="tab"]{{color:{_TXT3}!important}}
+button[role="tab"][aria-selected="true"]{{color:#60a5fa!important;background:rgba(8,12,28,.88)!important;border-color:{_BRD}!important}}
 .stNumberInput input,.stTextArea textarea,.stDateInput input,.stTextInput input{{background:{_BG2}!important;border-color:{_BRD}!important;color:{_TXT2}!important}}
-.block-container{{background:transparent!important}}
+.block-container{{background:transparent!important;position:relative;z-index:1}}
 
-/* ── PORTRAIT & LANDSCAPE MOBILE ────────────────── */
-@media screen and (max-width: 900px) {{
+/* ── PORTRAIT & LANDSCAPE MOBILE ── */
+@media screen and (max-width:900px){{
   .block-container{{padding:0.4rem 0.4rem 2rem!important}}
   [data-testid="stTabs"] [role="tablist"]{{gap:1px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch}}
   button[role="tab"]{{padding:5px 8px!important;font-size:.52rem!important;white-space:nowrap}}
   .orbit-title{{font-size:1.6rem!important}}
 }}
-@media screen and (max-width: 900px) and (orientation: portrait) {{
+@media screen and (max-width:900px) and (orientation:portrait){{
   div[data-testid="stColumns"]>div{{min-width:100%!important;flex:1 1 100%!important}}
   .stButton button{{font-size:.65rem!important;padding:10px!important}}
 }}
-@media screen and (max-width: 900px) and (orientation: landscape) {{
+@media screen and (max-width:900px) and (orientation:landscape){{
   div[data-testid="stColumns"]>div{{min-width:44%!important;flex:1 1 44%!important}}
   .block-container{{padding:0.3rem 0.5rem 1rem!important}}
   [data-testid="stMetricValue"] div{{font-size:1rem!important}}
 }}
-@media screen and (max-width: 480px) {{
+@media screen and (max-width:480px){{
   div[data-testid="stColumns"]>div{{min-width:100%!important;flex:1 1 100%!important}}
 }}
-</style>""", unsafe_allow_html=True)
+</style>""")
 
 # ── PLOTLY BASE THEME ────────────────────────────────────────────
 PD = dict(
