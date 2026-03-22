@@ -1252,102 +1252,153 @@ with t1:
             rh += '</div>'
             st.markdown(rh, unsafe_allow_html=True)
 
-    # ─ Attendance Heatmap + Timeline ─────────────────────────────
+    # ─ 3D Attendance Constellation ────────────────────────────────
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    st.html('<div style="font-size:.65rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-            'text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">'
-            '🗓️ Semester Attendance Heatmap — Auto-Logged · Green=Attended · Red=Absent · Blue=Upcoming</div>')
 
-    # ── Heatmap (course × week) ──
-    _week_labels = [f"Wk {w}" for w in _HM_WEEKS]
-    _course_labels = [c[1] for c in _HM_COURSES]
-    _hm_colorscale = [
-        [0.0,  "#7f1d1d"],   # absent
-        [0.3,  "#ef4444"],
-        [0.5,  "#1e3a5f"],   # upcoming
-        [0.55, "#2563eb"],
-        [0.65, "#34d399"],   # partial
-        [1.0,  "#064e3b"],   # fully attended
-    ]
-    fig_hm = go.Figure(go.Heatmap(
-        z=_hm_z,
-        x=_week_labels,
-        y=_course_labels,
-        text=_hm_text,
-        customdata=_hm_hover,
-        texttemplate="%{text}",
-        textfont=dict(size=11, color="rgba(255,255,255,0.85)"),
-        hovertemplate="%{customdata}<extra></extra>",
-        colorscale=_hm_colorscale,
-        zmin=0, zmax=1,
-        showscale=False,
-        xgap=3, ygap=3,
-    ))
-    # Mark current week
+    # Build 3D data: X=week, Y=course index, Z=0(absent)/0.5(upcoming)/1(attended)
+    _course_idx = {c[0]: i for i, c in enumerate(_HM_COURSES)}
+    _course_names = [c[1] for c in _HM_COURSES]
     _cur_wk = max(1, (TODAY - SEM_START).days // 7 + 1)
+
+    _3d_att  = dict(x=[], y=[], z=[], text=[], size=[], color=[])
+    _3d_abs  = dict(x=[], y=[], z=[], text=[])
+    _3d_up   = dict(x=[], y=[], z=[], text=[])
+
+    for _s in _ALL_SESSIONS:
+        _ci = _course_idx.get(_s["code"], 0)
+        _sdate = date.fromisoformat(_s["date"])
+        _ended = (_sdate < TODAY) or (_sdate == TODAY and NOW.time() > _s["end_time"])
+        _att = _ATT_LOG.get(_s["sid"], {}).get("attended", False)
+        _auto = _ATT_LOG.get(_s["sid"], {}).get("auto", True)
+        _wk = _s["week"]
+        _lbl = (f"Wk {_wk} · {_s['name']}<br>"
+                f"{_sdate.strftime('%a %d %b')}<br>"
+                f"{'✓ Attended' if _att else ('Upcoming' if not _ended else '✗ Absent')}"
+                f"{'  (auto)' if _auto else '  (manual)'}")
+        if not _ended:
+            _3d_up["x"].append(_wk); _3d_up["y"].append(_ci)
+            _3d_up["z"].append(0.3); _3d_up["text"].append(_lbl)
+        elif _att:
+            _3d_att["x"].append(_wk); _3d_att["y"].append(_ci)
+            _3d_att["z"].append(1.0); _3d_att["text"].append(_lbl)
+            _3d_att["size"].append(9)
+        else:
+            _3d_abs["x"].append(_wk); _3d_abs["y"].append(_ci)
+            _3d_abs["z"].append(0.05); _3d_abs["text"].append(_lbl)
+
+    # Vertical stems: line from z=0 to z=val for attended sessions
+    _stem_traces = []
+    for _xi, _yi, _zi in zip(_3d_att["x"], _3d_att["y"], _3d_att["z"]):
+        _stem_traces.append(go.Scatter3d(
+            x=[_xi, _xi], y=[_yi, _yi], z=[0, _zi],
+            mode="lines",
+            line=dict(color="rgba(16,185,129,.25)", width=2),
+            showlegend=False, hoverinfo="skip",
+        ))
+    for _xi, _yi, _zi in zip(_3d_abs["x"], _3d_abs["y"], _3d_abs["z"]):
+        _stem_traces.append(go.Scatter3d(
+            x=[_xi, _xi], y=[_yi, _yi], z=[0, _zi],
+            mode="lines",
+            line=dict(color="rgba(239,68,68,.3)", width=2),
+            showlegend=False, hoverinfo="skip",
+        ))
+
+    fig_3d = go.Figure(_stem_traces)
+
+    # Attended — glowing green spheres
+    if _3d_att["x"]:
+        fig_3d.add_trace(go.Scatter3d(
+            x=_3d_att["x"], y=_3d_att["y"], z=_3d_att["z"],
+            mode="markers", name="Attended",
+            marker=dict(size=8, color="#10b981", opacity=0.92,
+                        symbol="circle",
+                        line=dict(width=1, color="rgba(52,211,153,.6)")),
+            text=_3d_att["text"], hovertemplate="%{text}<extra></extra>",
+        ))
+
+    # Absent — red flat markers
+    if _3d_abs["x"]:
+        fig_3d.add_trace(go.Scatter3d(
+            x=_3d_abs["x"], y=_3d_abs["y"], z=_3d_abs["z"],
+            mode="markers", name="Absent",
+            marker=dict(size=7, color="#ef4444", opacity=0.8,
+                        symbol="cross",
+                        line=dict(width=1, color="rgba(239,68,68,.5)")),
+            text=_3d_abs["text"], hovertemplate="%{text}<extra></extra>",
+        ))
+
+    # Upcoming — blue translucent
+    if _3d_up["x"]:
+        fig_3d.add_trace(go.Scatter3d(
+            x=_3d_up["x"], y=_3d_up["y"], z=_3d_up["z"],
+            mode="markers", name="Upcoming",
+            marker=dict(size=5, color="#2563eb", opacity=0.4,
+                        symbol="circle",
+                        line=dict(width=0)),
+            text=_3d_up["text"], hovertemplate="%{text}<extra></extra>",
+        ))
+
+    # Current-week plane (semi-transparent sheet)
     if 1 <= _cur_wk <= 16:
-        fig_hm.add_vline(x=f"Wk {_cur_wk}", line_color="#f59e0b",
-                         line_width=2, line_dash="dot",
-                         annotation_text="NOW", annotation_font_color="#f59e0b",
-                         annotation_position="top")
-    fig_hm.update_layout(
-        **PD, height=240,
-        margin=dict(l=10, r=10, t=28, b=10),
-        xaxis=dict(side="top", tickfont=dict(size=9, color="#4a5568"),
-                   gridcolor="rgba(0,0,0,0)", zeroline=False),
-        yaxis=dict(tickfont=dict(size=9, color="#94b4d4"),
-                   gridcolor="rgba(0,0,0,0)", zeroline=False),
+        fig_3d.add_trace(go.Surface(
+            x=[[_cur_wk - 0.3, _cur_wk + 0.3], [_cur_wk - 0.3, _cur_wk + 0.3]],
+            y=[[-0.5, -0.5], [5.5, 5.5]],
+            z=[[0, 0], [0, 0]],
+            surfacecolor=[[1, 1], [1, 1]],
+            colorscale=[[0, "rgba(245,158,11,.08)"], [1, "rgba(245,158,11,.08)"]],
+            showscale=False, showlegend=False, hoverinfo="skip",
+        ))
+
+    fig_3d.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=480,
+        margin=dict(l=0, r=0, t=10, b=0),
+        scene=dict(
+            bgcolor="rgba(4,5,8,0)",
+            xaxis=dict(
+                title="Week", range=[0.5, 16.5],
+                tickvals=list(range(1, 17)),
+                ticktext=[f"Wk{w}" for w in range(1, 17)],
+                tickfont=dict(size=8, color="#4a5568"),
+                gridcolor="rgba(37,99,235,.1)",
+                backgroundcolor="rgba(0,0,0,0)",
+                showbackground=True,
+                linecolor="rgba(37,99,235,.2)",
+            ),
+            yaxis=dict(
+                title="", tickvals=list(range(6)),
+                ticktext=_course_names,
+                tickfont=dict(size=8, color="#94b4d4"),
+                gridcolor="rgba(37,99,235,.08)",
+                backgroundcolor="rgba(0,0,0,0)",
+                showbackground=True,
+                linecolor="rgba(37,99,235,.15)",
+            ),
+            zaxis=dict(
+                title="Attended", range=[0, 1.2],
+                tickvals=[0, 0.5, 1],
+                ticktext=["Absent", "Future", "✓"],
+                tickfont=dict(size=8, color="#4a5568"),
+                gridcolor="rgba(37,99,235,.06)",
+                backgroundcolor="rgba(0,0,0,0)",
+                showbackground=True,
+                linecolor="rgba(37,99,235,.12)",
+            ),
+            camera=dict(eye=dict(x=1.7, y=-1.9, z=1.1)),
+        ),
+        legend=dict(
+            font=dict(size=9, color="#94b4d4"),
+            bgcolor="rgba(12,16,32,.7)",
+            bordercolor="rgba(37,99,235,.3)",
+            borderwidth=1,
+            x=0.01, y=0.99,
+        ),
+        font=dict(family="Space Mono, monospace", color="#94b4d4"),
     )
-    st.plotly_chart(fig_hm, use_container_width=True, config={"displayModeBar": False})
-
-    # ── Per-course dot timeline ──
-    st.html('<div style="font-size:.6rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-            'text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;margin-top:4px">'
-            '● Session-level log — hover for details · click a dot below to mark absent/present</div>')
-
-    _dot_x, _dot_y, _dot_color, _dot_sym, _dot_hover, _dot_size = [], [], [], [], [], []
-    for _code, _short in _HM_COURSES:
-        for _s in _ALL_SESSIONS:
-            if _s["code"] != _code:
-                continue
-            _sdate = date.fromisoformat(_s["date"])
-            _ended = (_sdate < TODAY) or (_sdate == TODAY and NOW.time() > _s["end_time"])
-            _att_entry = _ATT_LOG.get(_s["sid"], {})
-            _att = _att_entry.get("attended", False)
-            _auto = _att_entry.get("auto", True)
-            if not _ended:
-                _clr, _sym = "#1e3a5f", "circle"
-            elif _att:
-                _clr, _sym = "#10b981", "circle"
-            else:
-                _clr, _sym = "#ef4444", "x"
-            _dot_x.append(_sdate.strftime("%d %b"))
-            _dot_y.append(_short)
-            _dot_color.append(_clr)
-            _dot_sym.append(_sym)
-            _dot_size.append(9)
-            _status = "✓ Attended" if _att else ("Upcoming" if not _ended else "✗ Absent")
-            _auto_lbl = " (auto)" if _auto else " (manual)"
-            _dot_hover.append(f"{_short}<br>{_sdate.strftime('%a %d %b')}<br>{_status}{_auto_lbl}<br>Wk {_s['week']}")
-
-    fig_dots = go.Figure(go.Scatter(
-        x=_dot_x, y=_dot_y,
-        mode="markers",
-        marker=dict(color=_dot_color, symbol=_dot_sym, size=_dot_size,
-                    line=dict(width=1.5, color="rgba(255,255,255,.2)")),
-        hovertemplate="%{customdata}<extra></extra>",
-        customdata=_dot_hover,
-    ))
-    fig_dots.update_layout(
-        **PD, height=200,
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(tickangle=-45, tickfont=dict(size=8, color="#4a5568"),
-                   gridcolor="rgba(255,255,255,.03)", zeroline=False),
-        yaxis=dict(tickfont=dict(size=9, color="#94b4d4"),
-                   gridcolor="rgba(255,255,255,.03)", zeroline=False),
-        showlegend=False,
-    )
-    st.plotly_chart(fig_dots, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig_3d, use_container_width=True,
+                    config={"displayModeBar": True, "modeBarButtonsToRemove": ["toImage"],
+                            "scrollZoom": True})
 
     # ── Manual override: mark a session absent/present ──
     with st.expander("✏️ Correct Attendance (mark a session absent or present)", expanded=False):
