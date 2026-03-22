@@ -13,6 +13,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
+from PIL import Image as _PILImage
 
 # ── CONFIG ──────────────────────────────────────────────────────
 _APP_DIR  = Path(__file__).parent          # apps/
@@ -114,9 +115,12 @@ def _next_class() -> tuple[dict, str] | tuple[None, None]:
     return None, None
 
 # ── PAGE ────────────────────────────────────────────────────────
+_favicon_path = _ROOT_DIR / "Tanaka.jpg"
+_favicon = _PILImage.open(str(_favicon_path)) if _favicon_path.exists() else "🛰️"
+
 st.set_page_config(
-    page_title="O.R.B.I.T",
-    page_icon="🛰️",
+    page_title="O.R.B.I.T — Tanaka Alex Mbendana",
+    page_icon=_favicon,
     layout="wide",
     initial_sidebar_state="collapsed",
 )
