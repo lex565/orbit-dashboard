@@ -1,0 +1,6 @@
+﻿wk,description,category,amount_yen,running_bal,pct_of_budget,notes
+1,Weekly groceries & meals,Food,350.0,4150.0,0.0777777777777778,Canteen + weekend cooking
+1,WeChat/AliPay top-up,Communication,50.0,4100.0,0.0888888888888889,Phone data
+2,Study materials / printing,Study Materials,80.0,4020.0,0.106666666666667,"Paper, pens, journal access"
+3,Weekend outing,Entertainment,120.0,3900.0,0.133333333333333,Cinema / museum
+TOTALS,,,600.0,3900.0,,

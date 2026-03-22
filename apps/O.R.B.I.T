@@ -1,0 +1,1 @@
+streamlit run apps\app_orbit.py

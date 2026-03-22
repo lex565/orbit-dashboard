@@ -1,0 +1,16 @@
+﻿section,status,target_date,notes,paper
+Title & Abstract,✅,Mar 2026,Cyclone SIF framework — complete draft,Paper 1
+1. Introduction,✅,Mar 2026,"Climate variability, NDVI vs SIF rationale",Paper 1
+2. Study Site Description,✅,Mar 2026,"SADC boundary, ENSO context, biomes",Paper 1
+3.1 Conceptual Framework,✅,Mar 2026,"BER window, disturbance ontology",Paper 1
+3.2 Cyclone Identification,✅,Mar 2026,"IBTrACS, storm-country pairs",Paper 1
+3.3 Datasets,✅,Mar 2026,"TROPOMI SIF, PML-V2 GPP, CHIRPS",Paper 1
+3.4 BER Window Framework,✅,Mar 2026,30-day baseline/event/recovery,Paper 1
+3.5 Data Coverage,✅,Apr 2026,Missingness thresholds defined,Paper 1
+3.6–3.8 Disruption Metrics,✅,Apr 2026,"CFDI, GPPDI, CFDI*, CVFII indices",Paper 1
+4.1–4.3 Results (SIF/GPP),⏳,Apr 2026,"BER dynamics, CFDI ranking",Paper 1
+4.4–4.6 Recovery & Coupling,⏳,Apr 2026,"Persistence, SIF-GPP coupling",Paper 1
+4.7–4.9 Rainfall Drivers,⏳,May 2026,"ETCCDI extremes, CVFII distribution",Paper 1
+5. Discussion,🔒,May 2026,"Synthesis, limitations, implications",Paper 1
+6. Conclusion,🔒,Jun 2026,"Research contributions, future work",Paper 1
+Submission & Revision,🔒,Jul 2026,Target: Remote Sensing of Environment,Paper 1
