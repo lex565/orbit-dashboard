@@ -206,10 +206,25 @@ def _sheets(path: str) -> dict:
             for sh in xls.sheet_names}
 
 if not XLSX_PATH.exists():
-    st.error(f"Excel file not found: {XLSX_PATH.resolve()}")
-    st.stop()
-
-RAW = _sheets(str(XLSX_PATH.resolve()))
+    st.markdown("### 📂 Upload Data File")
+    st.caption("The Excel data file was not found. Upload it to continue — it is only used for this session.")
+    _uploaded = st.file_uploader(
+        "Upload `academic_command_centre_v3.xlsx`",
+        type=["xlsx"],
+        key="xlsx_upload",
+    )
+    if _uploaded is not None:
+        _tmp_path = Path(__file__).parent / "academic_command_centre_v3.xlsx"
+        _tmp_path.write_bytes(_uploaded.read())
+        XLSX_PATH = _tmp_path
+        st.success("File loaded — refreshing…")
+        st.rerun()
+    else:
+        st.info("Tabs that depend on your Excel data (Obligations, Budget, Research) will be empty until the file is uploaded.")
+        # Provide empty fallback so the rest of the app (Expenses, Profile) still renders
+        RAW = {}
+else:
+    RAW = _sheets(str(XLSX_PATH.resolve()))
 
 
 def _analytics() -> pd.DataFrame:
@@ -1993,6 +2008,128 @@ with t5:
                 + '</div>',
                 unsafe_allow_html=True
             )
+
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── Publications + Achievements ──────────────────────────
+    pub_col, ach_col = st.columns([3, 2], gap="medium")
+
+    with pub_col:
+        PUBLICATIONS = [
+            {
+                "title": "Spatially Aggregated Cyclone Vegetation Responses Across Southern Africa: "
+                         "A Solar-Induced Fluorescence Perspective",
+                "authors": "Mbendana T.A., et al.",
+                "journal": "Remote Sensing of Environment",
+                "year": "2026",
+                "status": "In Preparation",
+                "doi": None,   # ← paste your DOI here once published
+                "tags": ["SIF", "TROPOMI", "Cyclones", "Southern Africa"],
+                "color": "#f59e0b",
+            },
+            {
+                "title": "Early Detection of Ecosystem Stress Using Satellite-Derived "
+                         "Photosynthetic Signals: A SADC Regional Framework",
+                "authors": "Mbendana T.A., et al.",
+                "journal": "ISPRS Journal / Remote Sensing",
+                "year": "2027",
+                "status": "Planned",
+                "doi": None,
+                "tags": ["Early Warning", "SIF", "Ecosystem Stress", "SADC"],
+                "color": "#4a5568",
+            },
+        ]
+        pub_html = (
+            '<div style="background:#0c1020;border:1px solid #12192b;border-radius:14px;padding:20px">'
+            '<div style="font-size:.6rem;color:#7c3aed;font-weight:700;text-transform:uppercase;'
+            'letter-spacing:.14em;font-family:\'Space Mono\',monospace;margin-bottom:14px">'
+            '📄 Publications &amp; Research Output</div>'
+        )
+        for i, p in enumerate(PUBLICATIONS):
+            doi_block = (
+                f'<a href="https://doi.org/{p["doi"]}" target="_blank" '
+                f'style="font-size:.58rem;color:#2563eb;font-family:\'Space Mono\',monospace;'
+                f'text-decoration:none">DOI: {p["doi"]}</a>'
+            ) if p["doi"] else (
+                '<span style="font-size:.58rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
+                'font-style:italic">DOI pending</span>'
+            )
+            tags_html = "".join([
+                f'<span style="padding:2px 8px;border-radius:10px;background:rgba(124,58,237,.12);'
+                f'border:1px solid rgba(124,58,237,.25);font-size:.55rem;color:#a78bfa;'
+                f'font-family:\'Space Mono\',monospace;margin-right:4px">{t}</span>'
+                for t in p["tags"]
+            ])
+            pub_html += (
+                f'<div style="padding:14px 0;border-bottom:1px solid #12192b;'
+                f'{"padding-top:0" if i==0 else ""}">'
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+                f'<span style="font-size:.55rem;font-family:\'Space Mono\',monospace;'
+                f'padding:2px 9px;border-radius:10px;'
+                f'background:{p["color"]}22;border:1px solid {p["color"]}55;color:{p["color"]}">'
+                f'{p["status"]}</span>'
+                f'<span style="font-size:.58rem;color:#4a5568;font-family:\'Space Mono\',monospace">'
+                f'{p["year"]}</span></div>'
+                f'<div style="font-size:.7rem;font-weight:700;color:#e2e8f0;line-height:1.4;margin-bottom:4px">'
+                f'{p["title"]}</div>'
+                f'<div style="font-size:.6rem;color:#4a5568;margin-bottom:4px">'
+                f'{p["authors"]} · <i>{p["journal"]}</i></div>'
+                f'<div style="margin-bottom:8px">{doi_block}</div>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:4px">{tags_html}</div>'
+                f'</div>'
+            )
+        pub_html += (
+            '<div style="margin-top:12px;padding:10px 12px;background:#07080f;border-radius:8px;'
+            'border:1px dashed #1e3a5f">'
+            '<div style="font-size:.58rem;color:#2563eb;font-family:\'Space Mono\',monospace;'
+            'margin-bottom:4px">🔗 Google Scholar</div>'
+            '<a href="https://scholar.google.com/citations?user=slfDEvoAAAAJ&hl=en" target="_blank" '
+            'style="font-size:.6rem;color:#60a5fa;text-decoration:none;font-family:\'Space Mono\',monospace">'
+            'scholar.google.com/citations?user=slfDEvoAAAAJ</a>'
+            '</div></div>'
+        )
+        st.markdown(pub_html, unsafe_allow_html=True)
+
+    with ach_col:
+        ACHIEVEMENTS = [
+            ("🏅", "Chinese Government Scholarship (CSC)",
+             "Full MSc scholarship — Beihang University 2025–2026",     "#f59e0b"),
+            ("🎓", "MSc Space Technology",
+             "School of Astronautics · Beihang University · Expected June 2026", "#2563eb"),
+            ("🌍", "SADC Regional Researcher",
+             "Active researcher on climate–ecosystem dynamics across "
+             "Mozambique, Zimbabwe, Malawi & regional Southern Africa",  "#10b981"),
+            ("📡", "TROPOMI / Sentinel-5P Analyst",
+             "Applied SIF remote sensing for photosynthetic stress "
+             "detection — one of few researchers applying this in SADC",  "#7c3aed"),
+            ("🌀", "Multi-Cyclone Attribution Study",
+             "Idai · Kenneth · Eloise · Freddy — comparative cyclone "
+             "vegetation impact analysis using spatially aggregated SIF", "#ea580c"),
+            ("⚙️", "Open-Source Research Pipeline",
+             "Reproducible Python pipeline: GEE + TROPOMI + IBTrACS "
+             "— end-to-end cyclone ecosystem impact analysis",            "#6366f1"),
+            ("🤖", "O.R.B.I.T System",
+             "Built personal academic operating system for discipline "
+             "tracking, finance management & research monitoring",        "#2563eb"),
+        ]
+        ach_html = (
+            '<div style="background:#0c1020;border:1px solid #12192b;border-radius:14px;padding:20px">'
+            '<div style="font-size:.6rem;color:#f59e0b;font-weight:700;text-transform:uppercase;'
+            'letter-spacing:.14em;font-family:\'Space Mono\',monospace;margin-bottom:14px">'
+            '🏆 Achievements &amp; Highlights</div>'
+        )
+        for icon, title, desc, color in ACHIEVEMENTS:
+            ach_html += (
+                f'<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #0d1117;'
+                f'align-items:flex-start">'
+                f'<div style="font-size:1.05rem;flex:0 0 22px;margin-top:1px">{icon}</div>'
+                f'<div><div style="font-size:.65rem;font-weight:700;color:{color};'
+                f'font-family:\'Space Mono\',monospace;margin-bottom:2px">{title}</div>'
+                f'<div style="font-size:.58rem;color:#4a5568;line-height:1.5">{desc}</div>'
+                f'</div></div>'
+            )
+        ach_html += '</div>'
+        st.markdown(ach_html, unsafe_allow_html=True)
 
     st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
