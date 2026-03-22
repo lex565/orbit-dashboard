@@ -5,7 +5,7 @@
 # ================================================================
 from __future__ import annotations
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import base64
 import json
 
@@ -15,14 +15,11 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 # ── CONFIG ──────────────────────────────────────────────────────
-XLSX_PATH = Path("academic_command_centre_v3.xlsx")
-for _d in [Path(__file__).parent,
-           Path.home() / "Desktop" / "Dashboard",
-           Path.home() / "Desktop"]:
-    if not XLSX_PATH.exists():
-        _c = _d / "academic_command_centre_v3.xlsx"
-        if _c.exists():
-            XLSX_PATH = _c
+_APP_DIR  = Path(__file__).parent          # apps/
+_ROOT_DIR = _APP_DIR.parent                # Dashboard/
+XLSX_PATH = _ROOT_DIR / "academic_command_centre_v3.xlsx"
+if not XLSX_PATH.exists():                 # fallback: same dir as app
+    XLSX_PATH = _APP_DIR / "academic_command_centre_v3.xlsx"
 
 LOGS_DIR = Path("orbit_logs")
 LOGS_DIR.mkdir(exist_ok=True)
@@ -34,7 +31,87 @@ ATTEND_THRESHOLD = 0.80
 SEM_START  = date(2026, 3, 3)
 SEM_END    = date(2026, 6, 26)
 TODAY      = date.today()
+NOW        = datetime.now()
 TOTAL_DAYS = (SEM_END - SEM_START).days
+
+# ── CLASS SCHEDULE (day=0Mon…6Sun, slots=50-min blocks) ──────────
+# Slot start times (h, m)
+_SLOT_START = {
+    1:(8,0), 2:(8,50), 3:(10,0), 4:(10,50),
+    5:(13,0),6:(13,50),7:(15,0), 8:(15,50),
+    9:(17,0),10:(17,50),11:(19,0),12:(19,50),
+}
+CLASS_SCHEDULE = [
+    {"name":"Chinese Language 2",  "code":"D253026002","color":"#2563eb",
+     "room":"Teaching Bldg 2, Rm 3003",
+     "days":[0,2], "slots":[1,2], "weeks":(1,16)},
+    {"name":"Sci Paper Writing",   "code":"D253026011","color":"#7c3aed",
+     "room":"Research Bldg 1, Rm 4108",
+     "days":[0],   "slots":[3,4], "weeks":(1,8)},
+    {"name":"RS Image Processing", "code":"D253051004","color":"#10b981",
+     "room":"Research Bldg 1, Rm 1043",
+     "days":[2,4], "slots":[3,4], "weeks":(1,8)},
+    {"name":"UAV Remote Sensing",  "code":"D253052002","color":"#ea580c",
+     "room":"Research Bldg 1, Rm 1043",
+     "days":[0,3], "slots":[3,4], "weeks":(6,9)},
+    {"name":"UAV Remote Sensing",  "code":"D253052002","color":"#ea580c",
+     "room":"Research Bldg 1, Rm 1043",
+     "days":[5,6], "slots":[1,2,3,4], "weeks":(10,11)},
+    {"name":"RS Natural Disasters","code":"D253051005","color":"#f59e0b",
+     "room":"Research Bldg 1, Rm 1045",
+     "days":[3],   "slots":[8,9,10], "weeks":(9,16)},
+    {"name":"RS Natural Disasters","code":"D253051005","color":"#f59e0b",
+     "room":"Research Bldg 1, Rm 1045",
+     "days":[4],   "slots":[8,9,10], "weeks":(15,16)},
+    {"name":"AI & Large Models",   "code":"D253041002","color":"#6366f1",
+     "room":"Research Bldg 1, Rm 4108",
+     "days":[0,1], "slots":[11,12], "weeks":(1,8)},
+]
+
+def _current_class() -> dict | None:
+    """Return the class happening right now, or None."""
+    wk = max(1, (TODAY - SEM_START).days // 7 + 1)
+    wd = NOW.weekday()
+    now_t = NOW.time()
+    for cls in CLASS_SCHEDULE:
+        if wd not in cls["days"]:
+            continue
+        if not (cls["weeks"][0] <= wk <= cls["weeks"][1]):
+            continue
+        s_start = cls["slots"][0]
+        s_end   = cls["slots"][-1]
+        sh, sm = _SLOT_START[s_start]
+        eh, em = _SLOT_START[s_end]
+        eh_end_m = em + 50
+        eh_real  = eh + eh_end_m // 60
+        em_real  = eh_end_m % 60
+        from datetime import time as _t
+        if _t(sh, sm) <= now_t <= _t(eh_real, em_real):
+            return cls
+    return None
+
+def _next_class() -> tuple[dict, str] | tuple[None, None]:
+    """Return (class_dict, 'today HH:MM' or 'DayName HH:MM') for next class."""
+    from datetime import time as _t
+    wk = max(1, (TODAY - SEM_START).days // 7 + 1)
+    # Check next 7 days
+    DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+    for offset in range(7):
+        check_date = TODAY + timedelta(days=offset)
+        wd = check_date.weekday()
+        for cls in CLASS_SCHEDULE:
+            if wd not in cls["days"]:
+                continue
+            if not (cls["weeks"][0] <= wk <= cls["weeks"][1]):
+                continue
+            s_start = cls["slots"][0]
+            sh, sm = _SLOT_START[s_start]
+            label = ("Today" if offset == 0 else DAY_NAMES[wd]) + f" {sh:02d}:{sm:02d}"
+            # skip if already passed today
+            if offset == 0 and NOW.time() > _t(sh, sm):
+                continue
+            return cls, label
+    return None, None
 
 # ── PAGE ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -64,30 +141,76 @@ _TXT4= "#1f2937" if _lm else "#94b4d4"
 st.markdown(
     """<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">"""
     """<style>
-html,body,.stApp{background:#07080f!important;color:#b8c4d0}
+/* ── AMBIENT ROOM BACKGROUND ── deep midnight grid, like a focused study room at night */
+html,body,.stApp{
+  background:#040508!important;color:#b8c4d0;
+  background-image:
+    linear-gradient(rgba(37,99,235,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(37,99,235,.04) 1px,transparent 1px),
+    radial-gradient(ellipse 80% 60% at 50% -10%,rgba(37,99,235,.07),transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%,rgba(124,58,237,.05),transparent),
+    radial-gradient(ellipse 40% 30% at 0% 80%,rgba(16,185,129,.04),transparent)!important;
+  background-size:40px 40px,40px 40px,100% 100%,100% 100%,100% 100%!important;
+}
 *,*::before,*::after{box-sizing:border-box}
 body{font-family:'Inter',sans-serif}
-section[data-testid="stSidebar"]{background:#07080f!important;border-right:1px solid #12192b}
+section[data-testid="stSidebar"]{background:#040508!important;border-right:1px solid #0e1628}
 #MainMenu,footer,header{visibility:hidden}
 .block-container{padding-top:1.2rem!important;padding-bottom:2rem!important;max-width:100%!important}
-[data-testid="stMetric"]{background:#0c1020!important;border:1px solid #12192b!important;border-radius:12px!important;padding:16px 14px 12px!important;position:relative;overflow:hidden}
-[data-testid="stMetric"]::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#1d4ed8,#3b82f6)}
+
+/* ── GLASSMORPHISM METRIC CARDS ── */
+[data-testid="stMetric"]{
+  background:rgba(12,16,32,0.7)!important;
+  backdrop-filter:blur(12px)!important;-webkit-backdrop-filter:blur(12px)!important;
+  border:1px solid rgba(37,99,235,.2)!important;
+  border-radius:14px!important;padding:16px 14px 12px!important;
+  position:relative;overflow:hidden;
+  box-shadow:0 4px 24px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.04)!important;
+  transition:transform .25s,border-color .25s,box-shadow .25s!important}
+[data-testid="stMetric"]::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,#1d4ed8,#7c3aed,#3b82f6)}
+[data-testid="stMetric"]:hover{transform:translateY(-3px)!important;
+  border-color:rgba(37,99,235,.5)!important;
+  box-shadow:0 8px 32px rgba(37,99,235,.2),inset 0 1px 0 rgba(255,255,255,.06)!important}
 [data-testid="stMetricLabel"] p{color:#4a5568!important;font-size:.65rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase;font-family:'Space Mono',monospace!important}
 [data-testid="stMetricValue"] div{color:#e2e8f0!important;font-family:'Space Mono',monospace!important;font-size:1.4rem!important;font-weight:700!important}
 [data-testid="stMetricDelta"]{display:none}
-[data-testid="stTabs"] [role="tablist"]{border-bottom:1px solid #12192b;gap:2px;background:transparent}
-button[role="tab"]{color:#4a5568!important;font-size:.68rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase;padding:9px 18px!important;border-radius:6px 6px 0 0!important;border:1px solid transparent!important;border-bottom:none!important;font-family:'Space Mono',monospace!important;background:transparent!important;transition:all .2s}
-button[role="tab"][aria-selected="true"]{color:#60a5fa!important;background:#0c1020!important;border-color:#12192b!important}
-button[role="tab"]:hover:not([aria-selected="true"]){color:#94b4d4!important;background:rgba(29,78,216,.1)!important}
+
+/* ── TABS ── */
+[data-testid="stTabs"] [role="tablist"]{border-bottom:1px solid #0e1628;gap:2px;background:transparent}
+button[role="tab"]{color:#4a5568!important;font-size:.68rem!important;font-weight:700!important;letter-spacing:.1em!important;text-transform:uppercase;padding:9px 18px!important;border-radius:6px 6px 0 0!important;border:1px solid transparent!important;border-bottom:none!important;font-family:'Space Mono',monospace!important;background:transparent!important;transition:all .25s}
+button[role="tab"][aria-selected="true"]{color:#60a5fa!important;background:rgba(12,16,32,.8)!important;border-color:#0e1628!important}
+button[role="tab"]:hover:not([aria-selected="true"]){color:#94b4d4!important;background:rgba(29,78,216,.08)!important}
+[data-testid="stTabContent"]{animation:tab-fade-in .3s ease forwards}
+
+/* ── INPUTS & BUTTONS ── */
 [data-testid="stDataFrame"]{display:none!important}
 .stAlert{border-radius:10px!important}
-.stNumberInput input,.stTextArea textarea,.stDateInput input{background:#0c1020!important;border:1px solid #12192b!important;color:#e2e8f0!important;border-radius:8px!important}
-.stFormSubmitButton button,.stButton button{background:linear-gradient(135deg,#1d4ed8,#2563eb)!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:700!important;font-family:'Space Mono',monospace!important;font-size:.75rem!important;letter-spacing:.06em!important}
+.stSelectbox [data-baseweb="select"]>div{background:#0c1020!important;border:1px solid #12192b!important;color:#e2e8f0!important}
+.stNumberInput input,.stTextArea textarea,.stDateInput input,.stTextInput input{background:#0c1020!important;border:1px solid #12192b!important;color:#e2e8f0!important;border-radius:8px!important}
+.stFormSubmitButton button,.stButton button{
+  background:linear-gradient(135deg,#1d4ed8,#2563eb)!important;
+  color:#fff!important;border:none!important;border-radius:8px!important;
+  font-weight:700!important;font-family:'Space Mono',monospace!important;
+  font-size:.75rem!important;letter-spacing:.06em!important;
+  box-shadow:0 4px 15px rgba(37,99,235,.35)!important;
+  transition:transform .2s,box-shadow .2s!important}
+.stFormSubmitButton button:hover,.stButton button:hover{transform:translateY(-1px)!important;box-shadow:0 6px 20px rgba(37,99,235,.5)!important}
+
+/* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-track{background:#07080f}
-::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:2px}
+::-webkit-scrollbar-track{background:#040508}
+::-webkit-scrollbar-thumb{background:rgba(37,99,235,.4);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:rgba(37,99,235,.7)}
 .stCaption{color:#4a5568!important;font-size:.7rem!important}
 div[data-testid="stVerticalBlock"] div[style*="overflow: hidden"]{overflow:visible!important}
+
+/* ── GLASSMORPHISM HELPER CLASS ── */
+.glass-card{
+  background:rgba(12,16,32,0.65)!important;
+  backdrop-filter:blur(16px)!important;-webkit-backdrop-filter:blur(16px)!important;
+  border:1px solid rgba(37,99,235,.18)!important;
+  box-shadow:0 8px 32px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05)!important}
 
 /* ── ANIMATIONS ─────────────────────────────────────── */
 @keyframes orbit-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -95,15 +218,19 @@ div[data-testid="stVerticalBlock"] div[style*="overflow: hidden"]{overflow:visib
 @keyframes pulse-glow{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0)}50%{opacity:.7;box-shadow:0 0 12px 4px rgba(16,185,129,.18)}}
 @keyframes avatar-pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.45),0 0 30px rgba(37,99,235,.2)}50%{box-shadow:0 0 0 14px rgba(37,99,235,0),0 0 40px rgba(37,99,235,.3)}}
 @keyframes shimmer-bar{0%{background-position:-400px 0}100%{background-position:400px 0}}
-@keyframes fade-in-up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fade-in-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes float-icon{0%,100%{transform:translateY(0) rotate(-5deg)}50%{transform:translateY(-7px) rotate(-5deg)}}
 @keyframes scan-line{0%{top:-2px;opacity:.6}100%{top:100%;opacity:0}}
 @keyframes status-blink{0%,100%{background:#10b981;box-shadow:0 0 0 0 rgba(16,185,129,.7)}50%{background:#10b981;box-shadow:0 0 0 6px rgba(16,185,129,0)}}
-@keyframes title-glow{0%,100%{text-shadow:0 0 20px rgba(37,99,235,.0)}50%{text-shadow:0 0 40px rgba(37,99,235,.25),0 0 80px rgba(124,58,237,.1)}}
+@keyframes title-glow{0%,100%{text-shadow:0 0 20px rgba(37,99,235,.0)}50%{text-shadow:0 0 40px rgba(37,99,235,.3),0 0 80px rgba(124,58,237,.15)}}
 @keyframes progress-anim{from{width:0%}to{width:inherit}}
-@keyframes card-in{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes card-in{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes orbit-dot{0%{transform:rotate(0deg) translateX(70px) rotate(0deg)}100%{transform:rotate(360deg) translateX(70px) rotate(-360deg)}}
 @keyframes star-twinkle{0%,100%{opacity:.15}50%{opacity:.7}}
+@keyframes tab-fade-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,0)}50%{box-shadow:0 0 0 4px rgba(37,99,235,.15)}}
+@keyframes count-up{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes ambient-glow{0%,100%{opacity:.4}50%{opacity:.7}}
 
 </style>""",
     unsafe_allow_html=True,
@@ -119,36 +246,47 @@ st.markdown("""<style>
 .orbit-title{animation:title-glow 4s ease-in-out infinite}
 .float-satellite{animation:float-icon 3s ease-in-out infinite}
 .fade-card{animation:card-in .5s ease forwards}
-.shimmer-line{background:linear-gradient(90deg,#1d4ed8 0%,#7c3aed 25%,#dc2626 50%,#ea580c 75%,#1d4ed8 100%);background-size:400px 100%;animation:shimmer-bar 3s linear infinite}
-[data-testid="stMetric"]{transition:transform .2s,border-color .2s!important}
-[data-testid="stMetric"]:hover{transform:translateY(-2px)!important;border-color:#1d4ed8!important}
+.shimmer-line{background:linear-gradient(90deg,#1d4ed8 0%,#7c3aed 25%,#d97706 50%,#2563eb 75%,#1d4ed8 100%);background-size:400px 100%;animation:shimmer-bar 3s linear infinite}
 </style>""", unsafe_allow_html=True)
 
 # ── DYNAMIC THEME + MOBILE RESPONSIVE CSS ────────────────────────
+_BG_GRID = "rgba(37,99,235,.03)" if not _lm else "rgba(0,0,0,.04)"
 st.markdown(f"""<style>
-html,body,.stApp{{background:{_BG}!important;color:{_TXT}!important}}
+html,body,.stApp{{
+  background:{_BG}!important;color:{_TXT}!important;
+  background-image:
+    linear-gradient({_BG_GRID} 1px,transparent 1px),
+    linear-gradient(90deg,{_BG_GRID} 1px,transparent 1px),
+    radial-gradient(ellipse 80% 50% at 50% -5%,rgba(37,99,235,.06),transparent),
+    radial-gradient(ellipse 50% 40% at 95% 100%,rgba(124,58,237,.04),transparent)!important;
+  background-size:40px 40px,40px 40px,100% 100%,100% 100%!important;
+}}
 section[data-testid="stSidebar"]{{background:{_BG}!important}}
-[data-testid="stMetric"]{{background:{_BG2}!important;border-color:{_BRD}!important}}
+[data-testid="stMetric"]{{background:rgba(12,16,32,0.72)!important;border-color:rgba(37,99,235,.22)!important}}
 [data-testid="stTabs"] [role="tablist"]{{border-color:{_BRD};flex-wrap:wrap}}
 button[role="tab"]{{color:{_TXT3}!important;font-size:.6rem!important;padding:7px 12px!important}}
-button[role="tab"][aria-selected="true"]{{color:#60a5fa!important;background:{_BG2}!important;border-color:{_BRD}!important}}
-.stNumberInput input,.stTextArea textarea,.stDateInput input{{background:{_BG2}!important;border-color:{_BRD}!important;color:{_TXT2}!important}}
-.block-container{{background:{_BG}!important}}
-/* ── MOBILE RESPONSIVE ─────────────────────────── */
-@media (max-width: 768px) {{
-  .block-container{{padding:0.5rem 0.5rem 2rem!important}}
-  div[data-testid="stColumns"]>div{{min-width:48%!important;flex:1 1 48%!important}}
-  div[data-testid="stColumns"]>div:only-child{{min-width:100%!important}}
-  [data-testid="stTabs"] [role="tablist"]{{gap:1px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}}
-  button[role="tab"]{{padding:6px 8px!important;font-size:.55rem!important;white-space:nowrap}}
-  .orbit-title{{font-size:1.8rem!important}}
-  div[style*="font-size:2.8rem"]{{font-size:1.8rem!important}}
-  div[style*="grid-template-columns:40px 1fr 100px 80px 80px"]{{grid-template-columns:30px 1fr 70px 60px!important}}
-  div[style*="grid-template-columns:1fr 80px 70px 70px"]{{grid-template-columns:1fr 60px 55px 55px!important}}
+button[role="tab"][aria-selected="true"]{{color:#60a5fa!important;background:rgba(12,16,32,.8)!important;border-color:{_BRD}!important}}
+.stNumberInput input,.stTextArea textarea,.stDateInput input,.stTextInput input{{background:{_BG2}!important;border-color:{_BRD}!important;color:{_TXT2}!important}}
+.block-container{{background:transparent!important}}
+
+/* ── PORTRAIT & LANDSCAPE MOBILE ────────────────── */
+@media screen and (max-width: 900px) {{
+  .block-container{{padding:0.4rem 0.4rem 2rem!important}}
+  [data-testid="stTabs"] [role="tablist"]{{gap:1px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch}}
+  button[role="tab"]{{padding:5px 8px!important;font-size:.52rem!important;white-space:nowrap}}
+  .orbit-title{{font-size:1.6rem!important}}
 }}
-@media (max-width: 480px) {{
+@media screen and (max-width: 900px) and (orientation: portrait) {{
   div[data-testid="stColumns"]>div{{min-width:100%!important;flex:1 1 100%!important}}
-  .stButton button{{font-size:.65rem!important;padding:8px!important}}
+  .stButton button{{font-size:.65rem!important;padding:10px!important}}
+}}
+@media screen and (max-width: 900px) and (orientation: landscape) {{
+  div[data-testid="stColumns"]>div{{min-width:44%!important;flex:1 1 44%!important}}
+  .block-container{{padding:0.3rem 0.5rem 1rem!important}}
+  [data-testid="stMetricValue"] div{{font-size:1rem!important}}
+}}
+@media screen and (max-width: 480px) {{
+  div[data-testid="stColumns"]>div{{min-width:100%!important;flex:1 1 100%!important}}
 }}
 </style>""", unsafe_allow_html=True)
 
@@ -502,6 +640,43 @@ with _tc2:
     if st.button(_btn_lbl, use_container_width=True, key="mode_toggle"):
         st.session_state.light_mode = not st.session_state.light_mode
         st.rerun()
+
+# ── CLASS ALERT BANNER ───────────────────────────────────────────
+_active_class = _current_class()
+_next_cls, _next_time = _next_class()
+if _active_class:
+    _cls = _active_class
+    _sh, _sm = _SLOT_START[_cls["slots"][0]]
+    _eh_raw = _SLOT_START[_cls["slots"][-1]][1] + 50
+    _eh = _SLOT_START[_cls["slots"][-1]][0] + _eh_raw // 60
+    _em = _eh_raw % 60
+    st.html(f"""
+    <div style="background:linear-gradient(135deg,{_cls['color']}22,{_cls['color']}11);
+      border:2px solid {_cls['color']};border-radius:14px;padding:14px 20px;margin-bottom:14px;
+      display:flex;align-items:center;gap:14px;animation:pulse-border 2s ease-in-out infinite">
+      <div style="font-size:1.6rem">🔔</div>
+      <div>
+        <div style="font-size:.6rem;color:{_cls['color']};font-family:'Space Mono',monospace;
+          font-weight:700;text-transform:uppercase;letter-spacing:.12em">CLASS IN SESSION NOW</div>
+        <div style="font-size:.95rem;font-weight:700;color:#e2e8f0;margin:3px 0">{_cls['name']}</div>
+        <div style="font-size:.62rem;color:#94b4d4">{_cls['room']}  ·  {_sh:02d}:{_sm:02d} – {_eh:02d}:{_em:02d}</div>
+      </div>
+      <div style="margin-left:auto;text-align:right">
+        <div style="font-size:.58rem;color:{_cls['color']};font-family:'Space Mono',monospace">{_cls['code']}</div>
+        <div style="font-size:1.2rem;font-family:'Space Mono',monospace;font-weight:700;color:{_cls['color']}">
+          {NOW.strftime('%H:%M')}</div>
+      </div>
+    </div>""")
+elif _next_cls:
+    st.html(f"""
+    <div style="background:#07080f;border:1px solid #1e3a5f;border-radius:10px;
+      padding:10px 18px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:1.1rem">📅</div>
+      <div style="font-size:.62rem;color:#4a5568;font-family:'Space Mono',monospace">
+        Next: <span style="color:{_next_cls['color']};font-weight:700">{_next_cls['name']}</span>
+        · {_next_time} · {_next_cls['room']}
+      </div>
+    </div>""")
 
 # ════════════════════════════════════════════════════════════════
 #  HEADER
@@ -1521,8 +1696,19 @@ with t5:
         except Exception:
             return ""
 
-    _IMG_PATH = str(Path(__file__).parent.parent / "Tanaka.jpg")
-    _img_src = _b64_img(_IMG_PATH)
+    # Search multiple candidate locations for the profile image
+    _img_candidates = [
+        _ROOT_DIR / "Tanaka.jpg",
+        _APP_DIR / "Tanaka.jpg",
+        Path(__file__).parent.parent / "Tanaka.jpg",
+        Path.home() / "Desktop" / "Dashboard" / "Tanaka.jpg",
+    ]
+    _img_src = ""
+    for _cand in _img_candidates:
+        _src = _b64_img(str(_cand))
+        if _src:
+            _img_src = _src
+            break
     _avatar_inner = (
         f'<div class="profile-avatar" style="position:absolute;top:50%;left:50%;'
         f'transform:translate(-50%,-50%);width:110px;height:110px;border-radius:50%;'
@@ -2017,26 +2203,28 @@ with t5:
     with pub_col:
         PUBLICATIONS = [
             {
-                "title": "Spatially Aggregated Cyclone Vegetation Responses Across Southern Africa: "
-                         "A Solar-Induced Fluorescence Perspective",
-                "authors": "Mbendana T.A., et al.",
-                "journal": "Remote Sensing of Environment",
-                "year": "2026",
-                "status": "In Preparation",
-                "doi": None,   # ← paste your DOI here once published
-                "tags": ["SIF", "TROPOMI", "Cyclones", "Southern Africa"],
-                "color": "#f59e0b",
+                "title": "Application of change detection techniques driven by expert opinions "
+                         "for small-area studies in developing countries",
+                "authors": "Mbendana T.A., Gumbo A.D., Jombo S., Mugari E., Kapangaziwiri E.",
+                "journal": "Scientific African",
+                "year": "2025",
+                "volume": "Vol. 27, e02594",
+                "status": "Published",
+                "doi": "10.1016/j.sciaf.2025.e02594",
+                "tags": ["Change Detection", "Expert Opinion", "Developing Countries", "Small-Area"],
+                "color": "#10b981",
             },
             {
-                "title": "Early Detection of Ecosystem Stress Using Satellite-Derived "
-                         "Photosynthetic Signals: A SADC Regional Framework",
+                "title": "Spatially Aggregated Cyclone Vegetation Impacts: "
+                         "A SIF-Based Diagnostic Framework for Southern Africa",
                 "authors": "Mbendana T.A., et al.",
-                "journal": "ISPRS Journal / Remote Sensing",
-                "year": "2027",
-                "status": "Planned",
+                "journal": "Remote Sensing of Environment  ·  Target Journal",
+                "year": "2026",
+                "volume": "",
+                "status": "In Preparation",
                 "doi": None,
-                "tags": ["Early Warning", "SIF", "Ecosystem Stress", "SADC"],
-                "color": "#4a5568",
+                "tags": ["SIF", "TROPOMI", "Cyclones", "Southern Africa"],
+                "color": "#f59e0b",
             },
         ]
         pub_html = (
@@ -2073,7 +2261,8 @@ with t5:
                 f'<div style="font-size:.7rem;font-weight:700;color:#e2e8f0;line-height:1.4;margin-bottom:4px">'
                 f'{p["title"]}</div>'
                 f'<div style="font-size:.6rem;color:#4a5568;margin-bottom:4px">'
-                f'{p["authors"]} · <i>{p["journal"]}</i></div>'
+                f'{p["authors"]} · <i>{p["journal"]}</i>'
+                f'{(" · " + p["volume"]) if p.get("volume") else ""}</div>'
                 f'<div style="margin-bottom:8px">{doi_block}</div>'
                 f'<div style="display:flex;flex-wrap:wrap;gap:4px">{tags_html}</div>'
                 f'</div>'
@@ -2092,8 +2281,8 @@ with t5:
 
     with ach_col:
         ACHIEVEMENTS = [
-            ("🏅", "Chinese Government Scholarship (CSC)",
-             "Full MSc scholarship — Beihang University 2025–2026",     "#f59e0b"),
+            ("🏅", "Beihang University Scholarship",
+             "Full MSc scholarship — School of Astronautics · Beihang University 2025–2026", "#f59e0b"),
             ("🎓", "MSc Space Technology",
              "School of Astronautics · Beihang University · Expected June 2026", "#2563eb"),
             ("🌍", "SADC Regional Researcher",

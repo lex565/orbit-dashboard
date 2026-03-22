@@ -7,7 +7,4 @@ orbit_logs/
 exports/
 logs/
 powerbi/
-*.xlsx
-*.pdf
-Tanaka.jpg
 orbit_edit.py
