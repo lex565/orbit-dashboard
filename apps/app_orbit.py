@@ -28,6 +28,7 @@ LOGS_DIR = Path("orbit_logs")
 LOGS_DIR.mkdir(exist_ok=True)
 LAST_VISIT_FILE  = LOGS_DIR / "last_visit.json"
 SAVINGS_FILE     = LOGS_DIR / "savings.json"
+EXPENSES_FILE    = LOGS_DIR / "expenses_log.csv"
 
 ATTEND_THRESHOLD = 0.80
 SEM_START  = date(2026, 3, 3)
@@ -123,16 +124,32 @@ st.markdown("""<style>
 [data-testid="stMetric"]:hover{transform:translateY(-2px)!important;border-color:#1d4ed8!important}
 </style>""", unsafe_allow_html=True)
 
-# ── DYNAMIC THEME CSS ────────────────────────────────────────────
+# ── DYNAMIC THEME + MOBILE RESPONSIVE CSS ────────────────────────
 st.markdown(f"""<style>
 html,body,.stApp{{background:{_BG}!important;color:{_TXT}!important}}
 section[data-testid="stSidebar"]{{background:{_BG}!important}}
 [data-testid="stMetric"]{{background:{_BG2}!important;border-color:{_BRD}!important}}
-[data-testid="stTabs"] [role="tablist"]{{border-color:{_BRD}}}
-button[role="tab"]{{color:{_TXT3}!important}}
+[data-testid="stTabs"] [role="tablist"]{{border-color:{_BRD};flex-wrap:wrap}}
+button[role="tab"]{{color:{_TXT3}!important;font-size:.6rem!important;padding:7px 12px!important}}
 button[role="tab"][aria-selected="true"]{{color:#60a5fa!important;background:{_BG2}!important;border-color:{_BRD}!important}}
 .stNumberInput input,.stTextArea textarea,.stDateInput input{{background:{_BG2}!important;border-color:{_BRD}!important;color:{_TXT2}!important}}
 .block-container{{background:{_BG}!important}}
+/* ── MOBILE RESPONSIVE ─────────────────────────── */
+@media (max-width: 768px) {{
+  .block-container{{padding:0.5rem 0.5rem 2rem!important}}
+  div[data-testid="stColumns"]>div{{min-width:48%!important;flex:1 1 48%!important}}
+  div[data-testid="stColumns"]>div:only-child{{min-width:100%!important}}
+  [data-testid="stTabs"] [role="tablist"]{{gap:1px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}}
+  button[role="tab"]{{padding:6px 8px!important;font-size:.55rem!important;white-space:nowrap}}
+  .orbit-title{{font-size:1.8rem!important}}
+  div[style*="font-size:2.8rem"]{{font-size:1.8rem!important}}
+  div[style*="grid-template-columns:40px 1fr 100px 80px 80px"]{{grid-template-columns:30px 1fr 70px 60px!important}}
+  div[style*="grid-template-columns:1fr 80px 70px 70px"]{{grid-template-columns:1fr 60px 55px 55px!important}}
+}}
+@media (max-width: 480px) {{
+  div[data-testid="stColumns"]>div{{min-width:100%!important;flex:1 1 100%!important}}
+  .stButton button{{font-size:.65rem!important;padding:8px!important}}
+}}
 </style>""", unsafe_allow_html=True)
 
 # ── PLOTLY BASE THEME ────────────────────────────────────────────
@@ -396,6 +413,34 @@ def _load_savings() -> float:
 def _save_savings(val: float):
     SAVINGS_FILE.write_text(json.dumps({"savings": val, "updated": TODAY.isoformat()}))
 
+# ── MANUAL EXPENSE LOG (CSV) ─────────────────────────────────────
+_EXP_COLS = ["date", "category", "description", "amount"]
+_EXP_CATS = ["Food & Drink", "Transport", "Stationery", "Electronics", "Health",
+             "Entertainment", "Clothing", "Utilities", "Other"]
+
+def _load_expenses() -> "pd.DataFrame":
+    try:
+        if EXPENSES_FILE.exists():
+            df = pd.read_csv(EXPENSES_FILE, encoding="utf-8")
+            for c in _EXP_COLS:
+                if c not in df.columns:
+                    df[c] = "" if c != "amount" else 0.0
+            return df[_EXP_COLS]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=_EXP_COLS)
+
+def _append_expense(dt: str, cat: str, desc: str, amt: float):
+    df = _load_expenses()
+    new_row = pd.DataFrame([{"date": dt, "category": cat, "description": desc, "amount": amt}])
+    df = pd.concat([df, new_row], ignore_index=True)
+    df.to_csv(EXPENSES_FILE, index=False, encoding="utf-8")
+
+def _delete_expense(idx: int):
+    df = _load_expenses()
+    df = df.drop(index=idx).reset_index(drop=True)
+    df.to_csv(EXPENSES_FILE, index=False, encoding="utf-8")
+
 current_savings = _load_savings()
 
 # ── AUTO-CALCULATED INCOME & KPIs ────────────────────────────────
@@ -534,13 +579,14 @@ _m(k6, "⏳ Days Left",    str(days_left),                            "#f59e0b")
 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
 # ── TABS ─────────────────────────────────────────────────────────
-t0, t1, t2, t3, t4, t5 = st.tabs([
+t0, t1, t2, t3, t4, t5, t6 = st.tabs([
     "⬡  OVERVIEW",
     "📋  OBLIGATIONS",
     "📄  RESEARCH",
     "💰  BUDGET",
     "🚀  TRAJECTORY",
     "👤  PROFILE",
+    "📱  EXPENSES",
 ])
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -1134,13 +1180,13 @@ with t3:
                            annotation_font_color="#7c3aed", annotation_position="top left")
     fig_proj.update_layout(
         **PD, height=280, barmode="overlay",
-        yaxis=dict(title="Savings (¥)", gridcolor="#12192b", tickprefix="¥"),
         yaxis2=dict(title="Stipend (¥)", overlaying="y", side="right",
                     showgrid=False, tickprefix="¥"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
         title=dict(text=f"18-Month Savings Projection from ¥{current_savings:,.0f} · Est. monthly spend: ¥{est_monthly_exp:,.0f}",
                    font_color="#4a5568", font_size=11),
     )
+    fig_proj.update_yaxes(title_text="Savings (¥)", tickprefix="¥", selector=dict(type="linear"), row=None, col=None)
     st.plotly_chart(fig_proj, use_container_width=True, config={"displayModeBar": False})
 
     sa_col, sb_col = st.columns(2, gap="medium")
@@ -2029,6 +2075,110 @@ with t5:
             + '</div></div>',
             unsafe_allow_html=True
         )
+
+
+# ── TAB 6: MOBILE EXPENSE ENTRY ─────────────────────────────────
+with t6:
+    st.html(f"""<style>
+    .exp-header{{font-size:.62rem;color:{_TXT3};font-family:'Space Mono',monospace;
+      text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}}
+    .exp-total{{font-size:1.6rem;font-family:'Space Mono',monospace;font-weight:700;color:#ef4444}}
+    .exp-card{{background:{_BG2};border:1px solid {_BRD};border-radius:10px;
+      padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}}
+    .exp-cat{{font-size:.6rem;color:{_TXT3};text-transform:uppercase;letter-spacing:.08em}}
+    .exp-desc{{font-size:.85rem;color:{_TXT2};margin:2px 0}}
+    .exp-date{{font-size:.6rem;color:{_TXT3}}}
+    .exp-amt{{font-size:1rem;font-family:'Space Mono',monospace;font-weight:700;color:#ef4444}}
+    </style>""")
+
+    _exp_df = _load_expenses()
+    _exp_total = float(_exp_df["amount"].sum()) if not _exp_df.empty else 0.0
+
+    # ── KPI row ──
+    ek1, ek2, ek3 = st.columns(3, gap="small")
+    with ek1:
+        st.html(f'<div style="background:{_BG2};border:1px solid {_BRD};border-radius:10px;padding:14px 12px">'
+                f'<div class="exp-header">📝 Logged</div>'
+                f'<div style="font-size:1.4rem;font-family:\'Space Mono\',monospace;font-weight:700;color:{_TXT2}">'
+                f'{len(_exp_df)}</div></div>')
+    with ek2:
+        st.html(f'<div style="background:{_BG2};border:1px solid {_BRD};border-radius:10px;padding:14px 12px">'
+                f'<div class="exp-header">💸 Total Spent</div>'
+                f'<div class="exp-total">¥{_exp_total:,.0f}</div></div>')
+    with ek3:
+        _this_month = TODAY.strftime("%Y-%m")
+        _mo_total = float(_exp_df[_exp_df["date"].str.startswith(_this_month)]["amount"].sum()) \
+                    if not _exp_df.empty else 0.0
+        st.html(f'<div style="background:{_BG2};border:1px solid {_BRD};border-radius:10px;padding:14px 12px">'
+                f'<div class="exp-header">📅 This Month</div>'
+                f'<div class="exp-total" style="color:#f59e0b">¥{_mo_total:,.0f}</div></div>')
+
+    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+
+    # ── Entry form ──
+    with st.expander("➕ Add New Expense", expanded=True):
+        ef1, ef2 = st.columns([1, 1], gap="small")
+        with ef1:
+            _new_cat = st.selectbox("Category", _EXP_CATS, key="exp_cat")
+            _new_amt = st.number_input("Amount (¥)", min_value=0.0, step=1.0,
+                                       format="%.0f", key="exp_amt")
+        with ef2:
+            _new_desc = st.text_input("Description", placeholder="e.g. Lunch at canteen", key="exp_desc")
+            _new_date = st.date_input("Date", value=TODAY, key="exp_date")
+        if st.button("💾  Log Expense", use_container_width=True, key="exp_submit"):
+            if _new_amt > 0:
+                _append_expense(str(_new_date), _new_cat, _new_desc.strip(), float(_new_amt))
+                st.success(f"Logged ¥{_new_amt:,.0f} — {_new_cat}")
+                st.rerun()
+            else:
+                st.warning("Enter an amount greater than 0.")
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    # ── Expense log list ──
+    if not _exp_df.empty:
+        _exp_sorted = _exp_df.copy()
+        _exp_sorted["_idx"] = _exp_sorted.index
+        _exp_sorted = _exp_sorted.sort_values("date", ascending=False)
+
+        st.html(f'<div class="exp-header" style="margin-top:8px">📜 Recent Expenses</div>')
+
+        # Category breakdown chart
+        if len(_exp_df) >= 2:
+            _cat_grp = _exp_df.groupby("category")["amount"].sum().reset_index()
+            _fig_exp = go.Figure(go.Pie(
+                labels=_cat_grp["category"], values=_cat_grp["amount"],
+                hole=0.55, textinfo="label+percent",
+                marker_colors=["#2563eb","#7c3aed","#10b981","#f59e0b",
+                               "#ef4444","#06b6d4","#ec4899","#84cc16","#94b4d4"],
+                textfont_size=10,
+                hovertemplate="%{label}: ¥%{value:,.0f}<extra></extra>",
+            ))
+            _fig_exp.update_layout(**PD, height=220,
+                title=dict(text="Spending by Category", font_color=_TXT3, font_size=11),
+                showlegend=False, margin=dict(l=10,r=10,t=30,b=10))
+            st.plotly_chart(_fig_exp, use_container_width=True, config={"displayModeBar": False})
+
+        # Row-by-row cards with delete
+        for _, row in _exp_sorted.iterrows():
+            orig_idx = int(row["_idx"])
+            _dc1, _dc2 = st.columns([5, 1], gap="small")
+            with _dc1:
+                st.html(
+                    f'<div class="exp-card">'
+                    f'<div><div class="exp-cat">{row["category"]}</div>'
+                    f'<div class="exp-desc">{row["description"] or "—"}</div>'
+                    f'<div class="exp-date">{row["date"]}</div></div>'
+                    f'<div class="exp-amt">¥{float(row["amount"]):,.0f}</div>'
+                    f'</div>'
+                )
+            with _dc2:
+                if st.button("🗑", key=f"del_exp_{orig_idx}", help="Delete this entry"):
+                    _delete_expense(orig_idx)
+                    st.rerun()
+    else:
+        st.html(f'<div style="text-align:center;padding:40px;color:{_TXT3};font-size:.8rem">'
+                f'No expenses logged yet. Add your first one above.</div>')
 
 
 # ── FOOTER ───────────────────────────────────────────────────────
