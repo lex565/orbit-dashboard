@@ -22,7 +22,7 @@ XLSX_PATH = _ROOT_DIR / "academic_command_centre_v3.xlsx"
 if not XLSX_PATH.exists():                 # fallback: same dir as app
     XLSX_PATH = _APP_DIR / "academic_command_centre_v3.xlsx"
 
-LOGS_DIR = Path("orbit_logs")
+LOGS_DIR = _ROOT_DIR / "orbit_logs"
 LOGS_DIR.mkdir(exist_ok=True)
 LAST_VISIT_FILE  = LOGS_DIR / "last_visit.json"
 SAVINGS_FILE     = LOGS_DIR / "savings.json"
@@ -72,7 +72,7 @@ CLASS_SCHEDULE = [
 
 def _current_class() -> dict | None:
     """Return the class happening right now, or None."""
-    wk = max(1, (TODAY - SEM_START).days // 7 + 1)
+    wk = max(1, (TODAY - _WK1_MONDAY).days // 7 + 1)
     wd = NOW.weekday()
     now_t = NOW.time()
     for cls in CLASS_SCHEDULE:
@@ -95,12 +95,12 @@ def _current_class() -> dict | None:
 def _next_class() -> tuple[dict, str] | tuple[None, None]:
     """Return (class_dict, 'today HH:MM' or 'DayName HH:MM') for next class."""
     from datetime import time as _t
-    wk = max(1, (TODAY - SEM_START).days // 7 + 1)
     # Check next 7 days
     DAY_NAMES = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
     for offset in range(7):
         check_date = TODAY + timedelta(days=offset)
         wd = check_date.weekday()
+        wk = max(1, (check_date - _WK1_MONDAY).days // 7 + 1)
         for cls in CLASS_SCHEDULE:
             if wd not in cls["days"]:
                 continue
@@ -151,8 +151,8 @@ st.html(f"""
 <link rel="manifest" href="data:application/manifest+json;base64,{_manifest_b64}">
 """)
 
-# Auto-refresh every 5 minutes (300,000 ms) — picks up Excel changes & date rollovers
-_refresh_count = st_autorefresh(interval=300_000, key="orbit_autorefresh")
+# Auto-refresh every 60 seconds — keeps class banner live and picks up Excel changes
+_refresh_count = st_autorefresh(interval=60_000, key="orbit_autorefresh")
 
 # ── DARK / LIGHT MODE ────────────────────────────────────────────
 if "light_mode" not in st.session_state:
