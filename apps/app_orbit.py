@@ -39,9 +39,9 @@ TOTAL_DAYS = (SEM_END - SEM_START).days
 # ── CLASS SCHEDULE (day=0Mon…6Sun, slots=50-min blocks) ──────────
 # Slot start times (h, m)
 _SLOT_START = {
-    1:(8,0), 2:(8,50), 3:(10,0), 4:(10,50),
-    5:(13,0),6:(13,50),7:(15,0), 8:(15,50),
-    9:(17,0),10:(17,50),11:(19,0),12:(19,50),
+    1:(8,0),  2:(8,50),  3:(9,50),  4:(10,40),
+    5:(11,30), 6:(14,0), 7:(14,50), 8:(15,50),
+    9:(16,40),10:(17,30),11:(19,0),12:(19,50),
 }
 CLASS_SCHEDULE = [
     {"name":"Chinese Language 2",  "code":"D253026002","color":"#2563eb",
@@ -55,16 +55,16 @@ CLASS_SCHEDULE = [
      "days":[2,4], "slots":[3,4], "weeks":(1,8)},
     {"name":"UAV Remote Sensing",  "code":"D253052002","color":"#ea580c",
      "room":"Research Bldg 1, Rm 1043",
-     "days":[0,3], "slots":[3,4], "weeks":(6,9)},
+     "days":[0], "slots":[8],    "weeks":(6,9)},   # Mon  S8  15:50
     {"name":"UAV Remote Sensing",  "code":"D253052002","color":"#ea580c",
      "room":"Research Bldg 1, Rm 1043",
-     "days":[5,6], "slots":[1,2,3,4], "weeks":(10,11)},
+     "days":[3], "slots":[6,7],  "weeks":(6,9)},   # Thu  S6-7 14:00
+    {"name":"UAV Remote Sensing",  "code":"D253052002","color":"#ea580c",
+     "room":"Research Bldg 1, Rm 1043",
+     "days":[5,6], "slots":[3,4,5], "weeks":(10,11)}, # Sat+Sun S3-5 09:50
     {"name":"RS Natural Disasters","code":"D253051005","color":"#f59e0b",
      "room":"Research Bldg 1, Rm 1045",
-     "days":[3],   "slots":[8,9,10], "weeks":(9,16)},
-    {"name":"RS Natural Disasters","code":"D253051005","color":"#f59e0b",
-     "room":"Research Bldg 1, Rm 1045",
-     "days":[4],   "slots":[8,9,10], "weeks":(15,16)},
+     "days":[4],   "slots":[8,9,10], "weeks":(9,16)},
     {"name":"AI & Large Models",   "code":"D253041002","color":"#6366f1",
      "room":"Research Bldg 1, Rm 4108",
      "days":[0,1], "slots":[11,12], "weeks":(1,8)},
@@ -726,11 +726,32 @@ current_savings = _load_savings()
 auto_income   = _auto_income()
 months_to_y2  = _months_to_year2()
 
-attended     = int(att_df["Attended"].sum()) if not att_df.empty else 0
-total_sess   = int(att_df["Total"].sum())    if not att_df.empty else 126
-sem_started  = attended > 0
+# Derive attendance from JSON log (auto-updated each page load) so the
+# dashboard stays live without needing manual Excel edits.
+_past_sids  = {s["sid"] for s in _ALL_SESSIONS
+               if date.fromisoformat(s["date"]) < TODAY or
+               (date.fromisoformat(s["date"]) == TODAY and NOW.time() > s["end_time"])}
+_past_total = len(_past_sids)
+attended    = sum(1 for sid in _past_sids if _ATT_LOG.get(sid, {}).get("attended", False))
+total_sess  = int(att_df["Total"].sum()) if not att_df.empty else len(_ALL_SESSIONS)
+sem_started = _past_total > 0
+att_frac    = attended / _past_total if _past_total > 0 else 0.0
 
-att_frac     = attended / total_sess if (sem_started and total_sess > 0) else 0.0
+# Per-course attendance from JSON log — no Excel needed
+_course_att_rows = []
+for _cac_code, _cac_short in _HM_COURSES:
+    _cac_all  = [s for s in _ALL_SESSIONS if s["code"] == _cac_code]
+    _cac_past = [s for s in _cac_all if s["sid"] in _past_sids]
+    _cac_att  = sum(1 for s in _cac_past if _ATT_LOG.get(s["sid"], {}).get("attended", False))
+    _cac_tot  = len(_cac_past)
+    _cac_rem  = len([s for s in _cac_all if s["sid"] not in _past_sids])
+    _cac_pct  = (_cac_att / _cac_tot) if _cac_tot > 0 else 0.0
+    _course_att_rows.append({
+        "Course": _cac_short, "Attended": _cac_att,
+        "Total": _cac_tot, "Pct": _cac_pct, "Remaining": _cac_rem,
+    })
+_course_att_df = pd.DataFrame(_course_att_rows)
+
 res_avg      = (p1p + p2p) / 2
 
 # current_savings IS the ground truth — what's actually in the bank right now.
@@ -842,6 +863,52 @@ elif _next_cls:
         · {_next_time} · {_next_cls['room']}
       </div>
     </div>""")
+
+# ── TODAY'S SCHEDULE STRIP ───────────────────────────────────────
+_today_wd = NOW.weekday()
+_today_wk = max(1, (TODAY - _WK1_MONDAY).days // 7 + 1)
+_today_classes = []
+for _tc in CLASS_SCHEDULE:
+    if _today_wd not in _tc["days"]:
+        continue
+    if not (_tc["weeks"][0] <= _today_wk <= _tc["weeks"][1]):
+        continue
+    _ts_h, _ts_m = _SLOT_START[_tc["slots"][0]]
+    _te_raw = _SLOT_START[_tc["slots"][-1]][1] + 50
+    _te_h   = _SLOT_START[_tc["slots"][-1]][0] + _te_raw // 60
+    _te_m   = _te_raw % 60
+    _today_classes.append((_tc, _ts_h, _ts_m, _te_h, _te_m))
+
+if _today_classes:
+    _tc_html = ""
+    for _tc, _ts_h, _ts_m, _te_h, _te_m in _today_classes:
+        _is_now = bool(_active_class and _active_class["code"] == _tc["code"])
+        _tc_bg  = f"{_tc['color']}30" if _is_now else f"{_tc['color']}12"
+        _tc_brd = f"{_tc['color']}cc" if _is_now else f"{_tc['color']}44"
+        _tc_html += (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;'
+            f'background:{_tc_bg};border:1px solid {_tc_brd};'
+            f'border-radius:8px;padding:5px 12px;margin:2px 4px">'
+            f'<span style="width:6px;height:6px;border-radius:50%;'
+            f'background:{_tc["color"]};flex-shrink:0"></span>'
+            f'<span style="font-size:.58rem;color:#94b4d4;'
+            f'font-family:\'Space Mono\',monospace">'
+            f'{_ts_h:02d}:{_ts_m:02d}–{_te_h:02d}:{_te_m:02d}</span>'
+            f'<span style="font-size:.62rem;font-weight:700;color:{_tc["color"]}">'
+            f'{_tc["name"]}</span>'
+            f'{"<span style=\\"font-size:.55rem;color:#f59e0b;font-family:\'Space Mono\',monospace\\"> ● NOW</span>" if _is_now else ""}'
+            f'</span>'
+        )
+    st.html(
+        f'<div style="display:flex;flex-wrap:wrap;align-items:center;'
+        f'margin-bottom:10px;padding:8px 14px;background:#07080f;'
+        f'border:1px solid #12192b;border-radius:10px">'
+        f'<span style="font-size:.55rem;color:#4a5568;'
+        f'font-family:\'Space Mono\',monospace;margin-right:10px;white-space:nowrap">'
+        f'TODAY · {TODAY.strftime("%a %d %b")} · WK {_today_wk}</span>'
+        f'{_tc_html}'
+        f'</div>'
+    )
 
 # ════════════════════════════════════════════════════════════════
 #  HEADER
@@ -1161,12 +1228,13 @@ with t1:
         )
 
     # ─ Course cards ─────────────────────────────────────────────
-    if not att_df.empty:
-        cols_c = st.columns(len(att_df))
-        for i, (_, row) in enumerate(att_df.iterrows()):
+    if not _course_att_df.empty:
+        cols_c = st.columns(len(_course_att_df))
+        for i, (_, row) in enumerate(_course_att_df.iterrows()):
             pv = float(row["Pct"])
-            pv = pv / 100 if pv > 1 else pv
             if not sem_started:
+                cc, cb, cd = "#4a5568", "#0c1020", "#12192b"
+            elif row["Total"] == 0:
                 cc, cb, cd = "#4a5568", "#0c1020", "#12192b"
             else:
                 cc = "#10b981" if pv >= ATTEND_THRESHOLD else "#ef4444"
@@ -1184,23 +1252,24 @@ with t1:
                     f'<div style="font-size:.65rem;color:{cc}">{pv*100:.0f}%</div>'
                     f'<div style="background:#12192b;border-radius:3px;height:5px;overflow:hidden;margin-top:8px">'
                     f'<div style="width:{min(pv*100,100):.1f}%;height:100%;background:{cc};border-radius:3px"></div></div>'
-                    f'<div style="font-size:.58rem;color:#4a5568;margin-top:5px">{int(row["Remaining"])} left</div>'
+                    f'<div style="font-size:.58rem;color:#4a5568;margin-top:5px">{int(row["Remaining"])} rem.</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
 
     # ─ Attendance bar chart (only when active) ───────────────────
-    if sem_started and not att_df.empty:
+    if sem_started and not _course_att_df.empty and _course_att_df["Total"].sum() > 0:
         st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
         fig_a = go.Figure()
-        fig_a.add_trace(go.Bar(x=att_df["Course"], y=att_df["Total"],
+        fig_a.add_trace(go.Bar(x=_course_att_df["Course"], y=_course_att_df["Total"],
                                name="Total", marker_color="#12192b",
-                               hovertemplate="%{x}<br>Total: %{y}<extra></extra>"))
-        fig_a.add_trace(go.Bar(x=att_df["Course"], y=att_df["Attended"],
+                               hovertemplate="%{x}<br>Total sessions: %{y}<extra></extra>"))
+        fig_a.add_trace(go.Bar(x=_course_att_df["Course"], y=_course_att_df["Attended"],
                                name="Attended", marker_color="#2563eb",
                                hovertemplate="%{x}<br>Attended: %{y}<extra></extra>"))
-        if att_df["Total"].mean() > 0:
-            fig_a.add_hline(y=att_df["Total"].mean() * ATTEND_THRESHOLD,
+        _avg_tot = _course_att_df["Total"].mean()
+        if _avg_tot > 0:
+            fig_a.add_hline(y=_avg_tot * ATTEND_THRESHOLD,
                             line_dash="dot", line_color="#ef4444",
                             annotation_text="80% min", annotation_font_color="#ef4444",
                             annotation_position="right")
@@ -1208,49 +1277,74 @@ with t1:
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
         st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
 
-    # ─ Timetable ─────────────────────────────────────────────────
+    # ─ Timetable (built from CLASS_SCHEDULE — always current) ───────
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     st.markdown(
         '<div style="font-size:.65rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-        'text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">🗓️ Course Timetable — Spring 2026</div>',
+        'text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">🗓️ Course Timetable — Spring 2026</div>',
         unsafe_allow_html=True
     )
-    DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
-    hdr = ('<div style="display:grid;grid-template-columns:70px repeat(7,1fr);'
-           'gap:4px;margin-bottom:4px">'
-           '<div style="font-size:.58rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-           'text-transform:uppercase;text-align:center;padding:5px 0">SLOT</div>')
-    for d in DAYS:
-        hdr += (f'<div style="font-size:.58rem;color:#4a5568;font-family:\'Space Mono\',monospace;'
-                f'text-transform:uppercase;text-align:center;padding:5px 0">{d[:3].upper()}</div>')
-    hdr += '</div>'
-    st.markdown(hdr, unsafe_allow_html=True)
 
-    if sched:
-        for sd in sched:
-            rh = ('<div style="display:grid;grid-template-columns:70px repeat(7,1fr);'
-                  'gap:4px;margin-bottom:4px">'
-                  f'<div style="display:flex;flex-direction:column;justify-content:center;'
-                  f'padding:4px 6px;background:#0c1020;border:1px solid #12192b;border-radius:7px">'
-                  f'<span style="font-size:.58rem;color:#2563eb;font-family:\'Space Mono\',monospace;'
-                  f'font-weight:700">{sd["slot"]}</span>'
-                  f'<span style="font-size:.52rem;color:#4a5568">{sd["time"]}</span></div>')
-            for cell in sd["cells"]:
-                if cell and cell != "nan":
-                    lines = cell.split("\n")
-                    name   = lines[0][:28] if lines else cell[:28]
-                    detail = lines[1][:22] if len(lines) > 1 else ""
-                    rh += (f'<div style="background:#0d1829;border:1px solid #1e3a5f;'
-                           f'border-radius:7px;padding:7px 8px;font-size:.65rem;'
-                           f'color:#b8c4d0;min-height:44px;line-height:1.35">'
-                           f'<b style="color:#60a5fa">{name}</b>')
-                    if detail:
-                        rh += f'<br><span style="color:#4a5568;font-size:.56rem">{detail}</span>'
-                    rh += '</div>'
-                else:
-                    rh += '<div style="background:transparent;border:1px solid transparent;border-radius:7px;min-height:44px"></div>'
-            rh += '</div>'
-            st.markdown(rh, unsafe_allow_html=True)
+    _TT_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    # Build per-day class lists from CLASS_SCHEDULE
+    _tt_map: dict[int, list[dict]] = {d: [] for d in range(7)}
+    for _cls in CLASS_SCHEDULE:
+        _ts_h2, _ts_m2 = _SLOT_START[_cls["slots"][0]]
+        _te_r2 = _SLOT_START[_cls["slots"][-1]][1] + 50
+        _te_h2 = _SLOT_START[_cls["slots"][-1]][0] + _te_r2 // 60
+        _te_m2 = _te_r2 % 60
+        for _d in _cls["days"]:
+            _tt_map[_d].append({
+                "name":  _cls["name"],
+                "color": _cls["color"],
+                "room":  _cls["room"],
+                "time":  f"{_ts_h2:02d}:{_ts_m2:02d}–{_te_h2:02d}:{_te_m2:02d}",
+                "weeks": f"Wks {_cls['weeks'][0]}–{_cls['weeks'][1]}",
+                "sort":  _ts_h2 * 60 + _ts_m2,
+            })
+    _active_tt_days = [d for d in range(7) if _tt_map[d]]
+    _cur_wd = NOW.weekday()
+
+    _tt_cols = st.columns(len(_active_tt_days))
+    for _ci, _d in enumerate(_active_tt_days):
+        _is_today = (_d == _cur_wd)
+        _day_bg   = "#0d1829"  if _is_today else "#0c1020"
+        _day_brd  = "#2563eb"  if _is_today else "#12192b"
+        _day_tc   = "#93c5fd"  if _is_today else "#4a5568"
+        _today_tag = ('<div style="font-size:.45rem;color:#2563eb;'
+                      'font-family:\'Space Mono\',monospace;letter-spacing:.1em;'
+                      'margin-top:1px">▶ TODAY</div>') if _is_today else ""
+        with _tt_cols[_ci]:
+            st.html(
+                f'<div style="background:{_day_bg};border:1px solid {_day_brd};'
+                f'border-radius:8px;padding:7px 6px;text-align:center;margin-bottom:7px">'
+                f'<div style="font-size:.65rem;font-weight:700;color:{_day_tc};'
+                f'font-family:\'Space Mono\',monospace;text-transform:uppercase;'
+                f'letter-spacing:.06em">{_TT_DAYS[_d][:3].upper()}</div>'
+                f'{_today_tag}'
+                f'</div>'
+            )
+            for _entry in sorted(_tt_map[_d], key=lambda x: x["sort"]):
+                _now_active = bool(_active_class and _active_class["name"] == _entry["name"] and _is_today)
+                _c_bg  = f"{_entry['color']}28" if _now_active else f"{_entry['color']}0e"
+                _c_brd = _entry["color"]         if _now_active else f"{_entry['color']}55"
+                _now_pip = (f'<span style="font-size:.45rem;color:{_entry["color"]};'
+                            f'font-family:\'Space Mono\',monospace;font-weight:700">'
+                            f' ● NOW</span>') if _now_active else ""
+                st.html(
+                    f'<div style="background:{_c_bg};border:1px solid {_c_brd};'
+                    f'border-radius:8px;padding:9px 10px;margin-bottom:5px">'
+                    f'<div style="font-size:.63rem;font-weight:700;color:{_entry["color"]};'
+                    f'line-height:1.35;margin-bottom:4px">{_entry["name"]}{_now_pip}</div>'
+                    f'<div style="font-size:.56rem;color:#94b4d4;'
+                    f'font-family:\'Space Mono\',monospace;margin-bottom:2px">'
+                    f'⏱ {_entry["time"]}</div>'
+                    f'<div style="font-size:.52rem;color:#4a5568;margin-bottom:2px">'
+                    f'📍 {_entry["room"]}</div>'
+                    f'<div style="font-size:.5rem;color:#374151;'
+                    f'font-family:\'Space Mono\',monospace">{_entry["weeks"]}</div>'
+                    f'</div>'
+                )
 
     # ─ 3D Attendance Constellation ────────────────────────────────
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
@@ -2388,8 +2482,8 @@ with t5:
         ("Chinese Language 2",   "D253026002", "Mon + Wed  S1–2  Weeks 1–16",          "Teaching Bldg 2, Rm 3003",   32, "#2563eb", "Zhang Yongqin"),
         ("Sci Paper Writing",    "D253026011", "Mon  S3–4  Weeks 1–8",                 "Research Bldg 1, Rm 4108",   8,  "#7c3aed", "Sheikh Tawhidul Islam"),
         ("RS Image Processing",  "D253051004", "Wed + Fri  S3–4  Weeks 1–8",           "Research Bldg 1, Rm 1043",   16, "#10b981", "Tan Yumin · Tariq Aqil"),
-        ("UAV Remote Sensing",   "D253052002", "Mon/Thu Wks 6–9 · Sat/Sun Wks 10–11", "Research Bldg 1, Rm 1043",   24, "#ea580c", "Tan Yumin · He Lingfeng"),
-        ("RS Natural Disasters", "D253051005", "Thu S8–10 Wks 9–16 + Fri 15–16",      "Research Bldg 1, Rm 1045",   18, "#f59e0b", "Sheikh Tawhidul Islam"),
+        ("UAV Remote Sensing",   "D253052002", "Mon S8 + Thu S6-7 Wks 6–9 · Sat+Sun S3-5 Wks 10–11", "Research Bldg 1, Rm 1043",   24, "#ea580c", "Tan Yumin · He Lingfeng"),
+        ("RS Natural Disasters", "D253051005", "Fri  S8–10  Weeks 9–16",               "Research Bldg 1, Rm 1045",   18, "#f59e0b", "Sheikh Tawhidul Islam"),
         ("AI & Large Models",    "D253041002", "Mon + Tue  S11–12  Weeks 1–8",         "Research Bldg 1, Rm 4108",   16, "#6366f1", "Populus euphratica"),
     ]
     cc = st.columns(3, gap="medium")
